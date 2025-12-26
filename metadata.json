@@ -1,0 +1,8 @@
+{
+  "name": "Estrada Leve",
+  "description": "Uma plataforma de saúde e bem-estar projetada especificamente para caminhoneiros, focando em exercícios práticos, alimentação na estrada e acompanhamento de metas.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
