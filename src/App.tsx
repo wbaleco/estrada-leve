@@ -116,7 +116,7 @@ const App: React.FC = () => {
       setHasProfile(has_p);
       if (has_p) {
         localStorage.setItem('has_profile', 'true');
-        setIsAdmin(stats.is_admin === true);
+        setIsAdmin(stats.isAdmin === true);
       }
     } catch (e: any) {
       console.error('Profile check error:', e);
