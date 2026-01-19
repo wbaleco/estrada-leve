@@ -3,10 +3,18 @@ import { supabase } from './supabase';
 
 export const api = {
     getUserStats: async () => {
-        const { data, error } = await supabase.from('user_stats').select('*').single();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return null;
+
+        const { data, error } = await supabase.from('user_stats')
+            .select('*')
+            .eq('user_id', user.id) // IMPORTANT: Explicit filter for when RLS is disabled
+            .single();
+
         // If no rows, return null (handled in App.tsx to trigger onboarding)
         if (error) {
             if (error.code === 'PGRST116') return null;
+            console.error('Error fetching user stats:', error);
             throw error;
         }
 
@@ -39,7 +47,8 @@ export const api = {
             currentWeight: d.current_weight,
             goalWeight: d.goal_weight,
             isAdmin: d.is_admin,
-            points: d.points
+            points: d.points,
+            avatarUrl: d.avatar_url
         }));
     },
 
@@ -58,13 +67,47 @@ export const api = {
         if (error) throw error;
     },
 
+    completeOnboarding: async (data: {
+        nickname: string,
+        weight: number,
+        goal: number,
+        height: number,
+        bmi: number,
+        idealWeight: number,
+        avatarUrl: string
+    }) => {
+        const { error } = await supabase.rpc('complete_user_onboarding', {
+            p_nickname: data.nickname,
+            p_current_weight: data.weight,
+            p_goal_weight: data.goal,
+            p_height: data.height,
+            p_bmi: data.bmi,
+            p_ideal_weight: data.idealWeight,
+            p_avatar_url: data.avatarUrl
+        });
+        if (error) throw error;
+    },
+
     signOut: async () => {
         await supabase.auth.signOut();
     },
 
     createProfile: async (stats: any) => {
+        // Try direct insert first (standard way)
         const { error } = await supabase.from('user_stats').insert(stats);
-        if (error) throw error;
+
+        if (error) {
+            console.warn('Standard insert failed, trying RPC bypass...', error);
+            // If RLS fails, try the secure RPC
+            if (error.code === '42501' || error.message.includes('row-level security')) {
+                const { error: rpcError } = await supabase.rpc('create_profile_secure', {
+                    profile_data: stats
+                });
+                if (rpcError) throw rpcError;
+            } else {
+                throw error;
+            }
+        }
     },
 
     getActivities: async (type?: string) => {
@@ -141,6 +184,21 @@ export const api = {
         if (error) {
             console.error('Supabase Insert Error:', error);
             throw error;
+        }
+
+        // Automatic Social Post for the meal
+        try {
+            const { data: stats } = await supabase.from('user_stats').select('nickname, avatar_url').eq('user_id', user.id).single();
+            await supabase.from('social_posts').insert({
+                name: stats?.nickname || 'Parceiro',
+                user_avatar_url: stats?.avatar_url,
+                text: `Acabei de bater um rangaço saudável: ${meal.name}! 🥗🍛`,
+                time_ago: 'Agora',
+                color: 'secondary',
+                user_id: user.id
+            });
+        } catch (postErr) {
+            console.error('Error creating automatic meal post:', postErr);
         }
     },
 
@@ -318,6 +376,36 @@ export const api = {
         await supabase.from('social_posts').update({ comments_count: (post?.comments_count || 0) + 1 }).eq('id', postId);
     },
 
+    getWorkoutComments: async (workoutId: string) => {
+        const { data, error } = await supabase
+            .from('workout_comments')
+            .select('*')
+            .eq('workout_id', workoutId)
+            .order('created_at', { ascending: true });
+        if (error) throw error;
+        return data;
+    },
+
+    addWorkoutComment: async (workoutId: string, text: string) => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) throw new Error('Not authenticated');
+
+        const { data: stats } = await supabase.from('user_stats').select('nickname, avatar_url').eq('user_id', user.id).single();
+
+        const { error } = await supabase.from('workout_comments').insert({
+            workout_id: workoutId,
+            user_id: user.id,
+            user_name: stats?.nickname || 'Parceiro',
+            user_avatar_url: stats?.avatar_url,
+            text: text
+        });
+        if (error) throw error;
+
+        // Update count
+        const { data: workout } = await supabase.from('workout_recordings').select('comments_count').eq('id', workoutId).single();
+        await supabase.from('workout_recordings').update({ comments_count: (workout?.comments_count || 0) + 1 }).eq('id', workoutId);
+    },
+
     addSocialPost: async (text: string) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not authenticated');
@@ -464,7 +552,7 @@ export const api = {
         return data.publicUrl;
     },
 
-    uploadWorkoutVideo: async (file: File, activityId?: string) => {
+    uploadWorkoutVideo: async (file: File, caption?: string, activityId?: string) => {
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) throw new Error('Not authenticated');
 
@@ -473,7 +561,7 @@ export const api = {
             throw new Error('O vídeo é muito pesado! Máximo 50MB, parceiro.');
         }
 
-        const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+        const fileName = `${user.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
         console.log('Uploading workout video:', fileName);
 
         const { error: uploadError } = await supabase.storage
@@ -498,6 +586,7 @@ export const api = {
             user_id: user.id,
             activity_id: activityId,
             video_url: publicUrl,
+            caption: caption,
             points_earned: 200
         });
 
@@ -524,6 +613,28 @@ export const api = {
         return publicUrl;
     },
 
+    uploadMealImage: async (file: File) => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) throw new Error('Not authenticated');
+
+        const fileName = `${user.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('meals')
+            .upload(fileName, file, {
+                cacheControl: '3600',
+                upsert: false
+            });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+            .from('meals')
+            .getPublicUrl(fileName);
+
+        return publicUrl;
+    },
+
     getLeaderboard: async () => {
         const { data, error } = await supabase
             .from('user_stats')
@@ -535,13 +646,60 @@ export const api = {
     },
 
     getRecentWorkouts: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
         const { data, error } = await supabase
             .from('workout_recordings')
-            .select('*, user_stats(nickname, avatar_url)')
+            .select(`
+                id,
+                user_id,
+                video_url,
+                caption,
+                likes_count,
+                comments_count,
+                points_earned,
+                created_at,
+                user_stats (nickname, avatar_url),
+                workout_likes(user_id)
+            `)
             .order('created_at', { ascending: false })
-            .limit(5);
-        if (error) throw error;
-        return data;
+            .limit(10);
+
+        if (error) {
+            console.error('Error in getRecentWorkouts:', error);
+            // Fallback: try without the join to at least show the videos
+            const { data: fallback, error: fError } = await supabase.from('workout_recordings').select('*').order('created_at', { ascending: false });
+            if (fError) throw fError;
+            return fallback || [];
+        }
+
+        return data.map((w: any) => ({
+            ...w,
+            is_liked: user ? w.workout_likes?.some((l: any) => l.user_id === user.id) : false
+        }));
+    },
+
+    toggleWorkoutLike: async (workoutId: string) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        const { data: existing } = await supabase
+            .from('workout_likes')
+            .select('*')
+            .eq('workout_id', workoutId)
+            .eq('user_id', user.id)
+            .single();
+
+        if (existing) {
+            await supabase.from('workout_likes').delete().eq('id', existing.id);
+            const { data: w } = await supabase.from('workout_recordings').select('likes_count').eq('id', workoutId).single();
+            await supabase.from('workout_recordings').update({ likes_count: Math.max(0, (w?.likes_count || 0) - 1) }).eq('id', workoutId);
+            return false;
+        } else {
+            await supabase.from('workout_likes').insert({ workout_id: workoutId, user_id: user.id });
+            const { data: w } = await supabase.from('workout_recordings').select('likes_count').eq('id', workoutId).single();
+            await supabase.from('workout_recordings').update({ likes_count: (w?.likes_count || 0) + 1 }).eq('id', workoutId);
+            return true;
+        }
     },
 
     getUserMedals: async () => {
@@ -601,5 +759,30 @@ export const api = {
                 });
             }
         }
+    },
+
+    getNotifications: async () => {
+        const { data, error } = await supabase
+            .from('app_notifications')
+            .select('*')
+            .gte('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data;
+    },
+
+    sendNotification: async (title: string, message: string, type: string = 'info') => {
+        const { error } = await supabase.from('app_notifications').insert({
+            title,
+            message,
+            type,
+            icon: type === 'urgent' ? 'report' : type === 'success' ? 'check_circle' : 'notifications'
+        });
+        if (error) throw error;
+    },
+
+    deleteNotification: async (id: string) => {
+        const { error } = await supabase.from('app_notifications').delete().eq('id', id);
+        if (error) throw error;
     }
 };

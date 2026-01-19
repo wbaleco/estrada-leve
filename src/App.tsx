@@ -29,9 +29,15 @@ const App: React.FC = () => {
   });
 
   const [session, setSession] = useState<any>(null);
-  const [hasProfile, setHasProfile] = useState<boolean | null>(null); // null = loading
+  const [hasProfile, setHasProfile] = useState<boolean | null>(() => {
+    const cached = localStorage.getItem('has_profile');
+    return cached === 'true' ? true : null;
+  }); // null = loading/unknown
   const [loading, setLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
     window.showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -39,12 +45,34 @@ const App: React.FC = () => {
       setTimeout(() => setToast(null), 3000);
     };
 
+    // Splash Timer
+    setTimeout(() => {
+      setShowSplash(false);
+    }, 2800);
+
     window.toggleTheme = () => {
       setIsDarkMode(prev => {
         const next = !prev;
         localStorage.setItem('theme', next ? 'dark' : 'light');
         return next;
       });
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      window.showToast('Conexão restabelecida! Sincronizando...', 'success');
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      window.showToast('Você está offline. Algumas funções podem não funcionar.', 'info');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
@@ -75,18 +103,67 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   const checkProfile = async () => {
+    // Se estivermos offline e já tivermos o cache de perfil, não precisamos nem tentar
+    if (!navigator.onLine && localStorage.getItem('has_profile') === 'true') {
+      setHasProfile(true);
+      setLoading(false);
+      return;
+    }
+
     try {
       const stats = await api.getUserStats();
-      setHasProfile(!!stats);
-    } catch (e) {
-      console.error(e);
-      setHasProfile(false);
+      const has_p = !!stats;
+      setHasProfile(has_p);
+      if (has_p) {
+        localStorage.setItem('has_profile', 'true');
+        setIsAdmin(stats.is_admin === true);
+      }
+    } catch (e: any) {
+      console.error('Profile check error:', e);
+
+      // Lógica de "blindagem" offline:
+      // Se houver erro de rede (offline) e já tínhamos perfil antes, mantemos o perfil como true
+      if (!navigator.onLine || e.message?.includes('Fetch') || e.code === 'NETWORK_ERROR') {
+        if (localStorage.getItem('has_profile') === 'true') {
+          setHasProfile(true);
+        }
+      } else if (e?.code === 'PGRST116' || e?.status === 404) {
+        // Apenas se o banco disser explicitamente que não existe, limpamos o cache
+        setHasProfile(false);
+        localStorage.removeItem('has_profile');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-background-dark flex items-center justify-center text-primary font-bold">Carregando...</div>;
+  if (showSplash) return (
+    <div className="min-h-screen bg-background-dark flex flex-col items-center justify-center relative overflow-hidden">
+      {/* Background Decorative Circles */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[100px] animate-pulse"></div>
+
+      <div className="relative z-10 flex flex-col items-center animate-in zoom-in-50 fade-in duration-700">
+        <div className="w-64 aspect-video flex items-center justify-center mb-0">
+          <img src="/logo.png" alt="Estrada Leve" className="w-full h-full object-contain" />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="h-1 w-12 bg-primary rounded-full animate-progress-fast"></div>
+          <p className="text-[10px] font-black tracking-[0.3em] uppercase text-primary/60">Carregando</p>
+          <div className="h-1 w-12 bg-primary rounded-full animate-progress-fast-delayed"></div>
+        </div>
+      </div>
+
+      <p className="absolute bottom-10 text-[var(--text-muted)] text-[10px] uppercase font-black tracking-widest opacity-20">Sua boleia, sua saúde.</p>
+    </div>
+  );
+
+  if (loading) return (
+    <div className="min-h-screen bg-background-dark flex flex-col items-center justify-center gap-4 text-primary font-bold">
+      <div className="size-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-[10px] uppercase tracking-widest opacity-50">Sincronizando...</p>
+    </div>
+  );
 
   if (!session) return <Login onLoginSuccess={() => { }} />;
   if (hasProfile === false) return <Onboarding onComplete={() => setHasProfile(true)} />;
@@ -99,8 +176,8 @@ const App: React.FC = () => {
       case View.GOALS: return <Goals />;
       case View.RESOURCES: return <Resources />;
       case View.RANKING: return <Ranking />;
-      case View.PROFILE: return <Profile />;
-      case View.ADMIN: return <Admin />;
+      case View.PROFILE: return <Profile onNavigate={setActiveView} />;
+      case View.ADMIN: return isAdmin ? <Admin /> : <Dashboard onNavigate={setActiveView} />;
       default: return <Dashboard onNavigate={setActiveView} />;
     }
   };
@@ -123,8 +200,8 @@ const App: React.FC = () => {
         <NavButton
           active={activeView === View.RANKING}
           onClick={() => setActiveView(View.RANKING)}
-          icon="leaderboard"
-          label="Ranking"
+          icon="group"
+          label="Social"
         />
         <NavButton
           active={activeView === View.GOALS}
@@ -145,6 +222,13 @@ const App: React.FC = () => {
           label="Dieta"
         />
       </nav>
+
+      {/* Offline Banner */}
+      {!isOnline && (
+        <div className="fixed top-0 left-0 right-0 bg-orange-500 text-white text-[10px] font-black text-center py-1 z-[101] uppercase tracking-widest animate-pulse">
+          Sinal Fraco - Modo Offline Ativado 📡
+        </div>
+      )}
 
       {/* Toast Notification */}
       {toast && (

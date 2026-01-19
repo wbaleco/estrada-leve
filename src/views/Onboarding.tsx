@@ -33,9 +33,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     };
 
     const handleNext = async () => {
+        console.log('Botao clicado! Step:', step);
         if (step < 6) {
             setStep(step + 1);
         } else {
+            console.log('Iniciando finishOnboarding...');
             await finishOnboarding();
         }
     };
@@ -86,52 +88,61 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
             let finalAvatarUrl = avatarUrl;
             if (file) {
-                finalAvatarUrl = await uploadAvatar(user.id);
+                console.log('Iniciando upload de avatar...');
+                try {
+                    finalAvatarUrl = await uploadAvatar(user.id);
+                } catch (e) {
+                    console.warn('Erro ao subir avatar, continuando sem ele:', e);
+                }
             }
 
-            // Update Auth Metadata with Nickname
-            await supabase.auth.updateUser({
-                data: { full_name: nickname, avatar_url: finalAvatarUrl }
-            });
+            // 1. ATOMIC ONBOARDING (Backend RPC) - Must come first!
+            console.log('Chamando backend via RPC...');
+            try {
+                await api.completeOnboarding({
+                    nickname,
+                    weight: parseFloat(weight),
+                    goal: parseFloat(goal),
+                    height: parseFloat(height),
+                    bmi: parseFloat(calculateBMI() as string),
+                    idealWeight: parseFloat(calculateIdealWeight() as string),
+                    avatarUrl: finalAvatarUrl
+                });
+                console.log('Backend respondeu com sucesso!');
+            } catch (rpcErr: any) {
+                console.error('Falha na RPC:', rpcErr);
+                throw new Error(`Erro no banco: ${rpcErr.message || JSON.stringify(rpcErr)}`);
+            }
 
-            // Create Initial Stats
-            await api.createProfile({
-                user_id: user.id,
-                current_weight: parseFloat(weight),
-                start_weight: parseFloat(weight),
-                goal_weight: parseFloat(goal),
-                height: parseFloat(height),
-                bmi: parseFloat(calculateBMI() as string),
-                ideal_weight: parseFloat(calculateIdealWeight() as string),
-                nickname: nickname,
-                avatar_url: finalAvatarUrl,
-                day: 1,
-                total_days: 30, // Default Challenge
-                points: 0,
-                weight_lost: 0
-            });
+            // 2. Update Auth Metadata (Triggers App re-check, so data must be ready)
+            try {
+                await supabase.auth.updateUser({
+                    data: { full_name: nickname, avatar_url: finalAvatarUrl }
+                });
+            } catch (e) {
+                console.warn('Metadata update minor error', e);
+            }
 
-            // Create Initial Weight History Entry
-            await supabase.from('goals_weight_history').insert({
-                user_id: user.id,
-                weight: parseFloat(weight),
-                label: 'Início',
-                date: new Date().toISOString()
-            });
-
+            console.log('Onboarding concluído com sucesso!');
+            window.showToast('Perfil criado! Bem-vindo(a)!', 'success');
             onComplete();
-        } catch (error) {
-            console.error(error);
-            window.showToast('Erro ao salvar dados. Tente novamente.', 'error');
+
+        } catch (error: any) {
+            console.error('Final Onboarding Error:', error);
+            const msg = error.message || JSON.stringify(error);
+            alert(`Erro no Onboarding: ${msg}`);
+            window.showToast(`Erro: ${msg}`, 'error');
         } finally {
             setLoading(false);
         }
     };
 
+
     return (
         <div className="min-h-screen flex flex-col bg-[var(--background)] p-6 relative overflow-hidden transition-colors duration-500">
             {/* Background Decor */}
-            <div className="absolute top-0 right-0 p-20 bg-primary/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+            {/* Background Decor - v2 */}
+            <div className="absolute top-0 right-0 p-20 bg-green-500/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
 
             <div className="flex justify-between items-center mb-8 relative z-10">
                 <div className="flex gap-2">

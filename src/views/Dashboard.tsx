@@ -10,10 +10,14 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [goals, setGoals] = useState<any[]>([]);
+  const [notification, setNotification] = useState<any | null>(null);
 
   const loadData = () => {
     api.getUserStats().then(setStats).catch(console.error);
     api.getDailyGoals().then(setGoals).catch(console.error);
+    api.getNotifications().then(list => {
+      if (list && list.length > 0) setNotification(list[0]);
+    }).catch(console.error);
     api.checkAndAwardMedals().catch(console.error);
   };
 
@@ -88,6 +92,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           Transforme cada parada em um passo para sua saúde. Vamos juntos nessa jornada!
         </p>
       </div>
+
+      {/* Notification Banner */}
+      {notification && (
+        <div className="px-4 mb-2 animate-in slide-in-from-top duration-700">
+          <div className={`p-4 rounded-2xl border-2 flex items-start gap-4 shadow-lg ${notification.type === 'urgent' ? 'bg-red-500/10 border-red-500/30' :
+              notification.type === 'success' ? 'bg-green-500/10 border-green-500/30' :
+                'bg-primary/10 border-primary/30'
+            }`}>
+            <span className={`material-symbols-outlined mt-0.5 ${notification.type === 'urgent' ? 'text-red-500' :
+                notification.type === 'success' ? 'text-green-500' :
+                  'text-primary'
+              }`}>
+              {notification.icon || 'campaign'}
+            </span>
+            <div className="flex-1">
+              <h4 className="text-sm font-black uppercase tracking-tight text-[var(--text-primary)]">{notification.title}</h4>
+              <p className="text-xs font-bold text-[var(--text-secondary)] mt-1 leading-relaxed">{notification.message}</p>
+            </div>
+            <button onClick={() => setNotification(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="flex flex-wrap gap-3 p-4">

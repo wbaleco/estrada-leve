@@ -2,9 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import { UserStats } from '../types';
+import { UserStats, View } from '../types';
 
-const Profile: React.FC = () => {
+interface ProfileProps {
+    onNavigate?: (view: View) => void;
+}
+
+const Profile: React.FC<ProfileProps> = ({ onNavigate }) => {
     const [stats, setStats] = useState<UserStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -116,6 +120,45 @@ const Profile: React.FC = () => {
         }
     };
 
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+    const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const file = e.target.files[0];
+
+        setUploadingAvatar(true);
+        try {
+            const user = (await supabase.auth.getUser()).data.user;
+            if (!user) throw new Error('Not authenticated');
+
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+
+            // Update profile and auth metadata
+            await Promise.all([
+                api.updateProfile(user.id, { avatar_url: publicUrl }),
+                supabase.auth.updateUser({ data: { avatar_url: publicUrl } })
+            ]);
+
+            window.showToast('Foto atualizada!', 'success');
+            loadData();
+        } catch (err: any) {
+            console.error(err);
+            window.showToast('Erro ao subir foto: ' + err.message, 'error');
+        } finally {
+            setUploadingAvatar(false);
+        }
+    };
+
     if (loading) return <div className="p-10 text-center text-[var(--text-muted)] font-bold italic animate-pulse">Consultando ficha técnica...</div>;
 
     return (
@@ -124,12 +167,13 @@ const Profile: React.FC = () => {
                 {/* Profile Header */}
                 <div className="flex flex-col items-center mb-8">
                     <div className="relative mb-4 group">
-                        <div className="size-24 rounded-full border-4 border-primary shadow-2xl overflow-hidden bg-white/5">
+                        <div className={`size-24 rounded-full border-4 border-primary shadow-2xl overflow-hidden bg-white/5 ${uploadingAvatar ? 'animate-pulse' : ''}`}>
                             <img src={stats?.avatarUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"} className="w-full h-full object-cover" />
                         </div>
-                        <button className="absolute bottom-0 right-0 size-8 bg-primary rounded-full flex items-center justify-center border-2 border-[var(--background)] shadow-lg hover:scale-110 transition-transform">
-                            <span className="material-symbols-outlined text-black text-sm font-bold">edit</span>
-                        </button>
+                        <label className="absolute bottom-0 right-0 size-8 bg-primary rounded-full flex items-center justify-center border-2 border-[var(--background)] shadow-lg hover:scale-110 transition-transform cursor-pointer">
+                            <span className="material-symbols-outlined text-black text-sm font-bold">{uploadingAvatar ? 'sync' : 'edit'}</span>
+                            <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} disabled={uploadingAvatar} />
+                        </label>
                     </div>
                     <h1 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tight">{stats?.nickname || 'Motorista'}</h1>
                     <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-[0.2em] mt-1">Parceiro Estrada Leve</p>
@@ -252,6 +296,22 @@ const Profile: React.FC = () => {
                             </form>
                         </div>
                     </section>
+
+
+                    {stats?.isAdmin && (
+                        <section className="bg-primary/5 border border-primary/20 rounded-2xl overflow-hidden shadow-sm">
+                            <button
+                                onClick={() => onNavigate?.(View.ADMIN)}
+                                className="w-full p-4 flex items-center justify-between hover:bg-primary/10 transition-colors"
+                            >
+                                <div className="flex items-center gap-3 text-primary">
+                                    <span className="material-symbols-outlined font-bold">admin_panel_settings</span>
+                                    <span className="text-xs font-black uppercase tracking-widest">Painel do Chefe</span>
+                                </div>
+                                <span className="material-symbols-outlined text-primary">chevron_right</span>
+                            </button>
+                        </section>
+                    )}
 
                     <button
                         onClick={() => setShowDeleteConfirm(true)}

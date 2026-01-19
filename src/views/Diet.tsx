@@ -9,6 +9,10 @@ const Diet: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newMeal, setNewMeal] = useState({ name: '', description: '', calories: 300, category: 'lunch' });
   const [newShoppingItem, setNewShoppingItem] = useState('');
+  const [mealImage, setMealImage] = useState<File | null>(null);
+  const [mealImagePreview, setMealImagePreview] = useState<string | null>(null);
+  const [uploadingMeal, setUploadingMeal] = useState(false);
+  const mealInputRef = React.useRef<HTMLInputElement>(null);
 
   const loadData = () => {
     api.getMeals().then(data => {
@@ -70,21 +74,99 @@ const Diet: React.FC = () => {
 
   const handleAddMeal = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUploadingMeal(true);
     try {
+      let imageUrl = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'; // Default
+
+      if (mealImage) {
+        imageUrl = await api.uploadMealImage(mealImage);
+      }
+
       await api.logMeal({
         ...newMeal,
-        image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop', // Default food image
-        consumed: true, // Logged meals are usually already consumed
+        image: imageUrl,
+        consumed: true,
         time_prep: 'Agora',
-        tags: ['Log']
+        tags: ['Real-time']
       });
+
       setShowAddModal(false);
       setNewMeal({ name: '', description: '', calories: 300, category: 'lunch' });
+      setMealImage(null);
+      setMealImagePreview(null);
       loadData();
-      window.showToast('Refeição salva! +20 pontos', 'success');
-    } catch (err) {
-      console.error(err);
-      window.showToast('Erro ao salvar refeição', 'error');
+      window.showToast('Refeição salva e postada no Mural! +20 pontos', 'success');
+    } catch (err: any) {
+      console.error('Error adding meal:', err);
+      // More descriptive error
+      const errorMsg = err.message || 'Erro ao salvar refeição';
+      window.showToast(errorMsg === 'Failed to fetch' ? 'Erro de conexão ou bucket não criado' : errorMsg, 'error');
+    } finally {
+      setUploadingMeal(false);
+    }
+  };
+
+  const estimateCalories = (description: string) => {
+    const text = description.toLowerCase();
+    let total = 0;
+
+    // Road food calorie dictionary (approximate per portion)
+    const library: { [key: string]: number } = {
+      'arroz': 130,
+      'feijão': 100,
+      'feijao': 100,
+      'frango': 160,
+      'bife': 250,
+      'carne': 250,
+      'ovo': 80,
+      'salada': 30,
+      'alface': 10,
+      'tomate': 20,
+      'batata': 150,
+      'pão': 150,
+      'pao': 150,
+      'queijo': 100,
+      'presunto': 50,
+      'manteiga': 70,
+      'café': 2,
+      'leite': 60,
+      'suco': 100,
+      'refrigerante': 150,
+      'macarrão': 200,
+      'macarrao': 200,
+      'farofa': 150,
+      'peixe': 120,
+      'fruta': 60,
+      'banana': 90,
+      'maçã': 60,
+      'maca': 60
+    };
+
+    Object.keys(library).forEach(item => {
+      if (text.includes(item)) {
+        total += library[item];
+      }
+    });
+
+    // Default if nothing found but text exists
+    if (total === 0 && text.length > 3) total = 250;
+    // Cap for a single meal
+    if (total > 1500) total = 1500;
+
+    if (total > 0) {
+      setNewMeal(prev => ({ ...prev, calories: total }));
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setMealImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setMealImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -92,6 +174,13 @@ const Diet: React.FC = () => {
     const categoryMap: { [key: string]: string } = { 'Café': 'breakfast', 'Almoço': 'lunch', 'Lanches': 'snack', 'Jantar': 'dinner' };
     return m.category === categoryMap[activeTab];
   });
+
+  const caloriesConsumed = meals
+    .filter(m => m.consumed)
+    .reduce((total, m) => total + (m.calories || 0), 0);
+
+  const dailyGoal = 2200;
+  const progressPercent = Math.min(100, (caloriesConsumed / dailyGoal) * 100);
 
   return (
     <div className="flex flex-col animate-in slide-in-from-right duration-500 pb-20">
@@ -108,7 +197,39 @@ const Diet: React.FC = () => {
           <h2 className="text-3xl font-bold">Semana 1: Dia 5</h2>
           <span className="text-primary font-medium text-sm">Fase: Detox</span>
         </div>
-        <p className="text-gray-400 text-sm">Foco: Energia para viagens longas</p>
+        <p className="text-gray-400 text-sm mb-6">Foco: Energia para viagens longas</p>
+
+        {/* Calorie Dashboard */}
+        <div className="bg-[var(--card)] rounded-2xl border border-[var(--card-border)] p-5 shadow-lg relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <span className="material-symbols-outlined text-6xl">analytics</span>
+          </div>
+          <div className="flex justify-between items-end mb-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-1">Calorias do Dia</p>
+              <div className="flex items-baseline gap-1">
+                <span className="text-3xl font-black text-primary">{caloriesConsumed}</span>
+                <span className="text-sm font-bold text-[var(--text-muted)]">/ {dailyGoal} kcal</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs font-black px-2 py-1 rounded-md ${progressPercent > 100 ? 'bg-red-500/20 text-red-500' : 'bg-primary/20 text-primary'}`}>
+                {Math.round(progressPercent)}%
+              </span>
+            </div>
+          </div>
+
+          <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+            <div
+              className={`h-full transition-all duration-1000 ease-out rounded-full ${progressPercent > 100 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-gradient-to-r from-primary to-[#6eb820] shadow-[0_0_10px_rgba(154,233,48,0.3)]'}`}
+              style={{ width: `${progressPercent}%` }}
+            ></div>
+          </div>
+
+          <p className="text-[10px] text-[var(--text-muted)] mt-3 font-medium italic">
+            {progressPercent > 100 ? '⚠️ Cuidado com o excesso, parceiro!' : '✅ Você está no caminho certo para o objetivo!'}
+          </p>
+        </div>
       </div>
 
       <div className="flex gap-3 px-4 overflow-x-auto hide-scrollbar snap-x mb-6">
@@ -234,59 +355,124 @@ const Diet: React.FC = () => {
       {showAddModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowAddModal(false)}></div>
-          <div className="bg-background-light dark:bg-card-dark w-full max-w-md rounded-3xl p-6 relative z-10 border border-white/10 shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold mb-4">O que você comeu?</h3>
-            <form onSubmit={handleAddMeal} className="flex flex-col gap-4">
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Nome da Refeição</label>
-                <input
-                  required
-                  type="text"
-                  value={newMeal.name}
-                  onChange={e => setNewMeal({ ...newMeal, name: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-primary transition-colors"
-                  placeholder="Ex: Prato Feito de Posto"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Descrição / Notas</label>
-                <textarea
-                  value={newMeal.description}
-                  onChange={e => setNewMeal({ ...newMeal, description: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-primary transition-colors h-20"
-                  placeholder="Ex: Arroz, feijão, frango grelhado e salada."
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col">
-                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Calorias (aprox)</label>
-                  <div className="relative">
+          <div className="bg-background-light dark:bg-card-dark w-full max-w-md max-h-[90vh] flex flex-col rounded-3xl relative z-10 border border-white/10 shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-6 pb-2 flex justify-between items-center border-b border-white/5">
+              <h3 className="text-xl font-bold">O que você comeu?</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="size-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
+              <form id="mealForm" onSubmit={handleAddMeal} className="flex flex-col gap-5">
+                <div className="flex flex-col items-center gap-3">
+                  <div
+                    onClick={() => mealInputRef.current?.click()}
+                    className="w-full aspect-video rounded-2xl bg-[var(--background)] border-2 border-dashed border-[var(--card-border)] flex flex-col items-center justify-center overflow-hidden cursor-pointer hover:border-primary/50 transition-all relative group"
+                  >
+                    {mealImagePreview ? (
+                      <>
+                        <img src={mealImagePreview} className="w-full h-full object-cover" alt="Preview" />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="material-symbols-outlined text-white text-3xl">add_a_photo</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-4xl text-[var(--text-muted)] group-hover:text-primary transition-colors">add_a_photo</span>
+                        <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mt-2">Clique para bater a foto</p>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    ref={mealInputRef}
+                    onChange={handleImageChange}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Nome da Refeição</label>
                     <input
-                      type="number"
-                      value={newMeal.calories}
-                      onChange={e => setNewMeal({ ...newMeal, calories: parseInt(e.target.value) })}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-primary transition-colors font-bold"
+                      required
+                      type="text"
+                      value={newMeal.name}
+                      onChange={e => setNewMeal({ ...newMeal, name: e.target.value })}
+                      className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl p-3.5 outline-none focus:border-primary transition-colors text-[var(--text-primary)] font-bold"
+                      placeholder="Ex: Prato Feito de Posto"
                     />
                   </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Descrição / Notas</label>
+                    <textarea
+                      value={newMeal.description}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNewMeal({ ...newMeal, description: val });
+                        estimateCalories(val);
+                      }}
+                      className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl p-3.5 outline-none focus:border-primary transition-colors h-24 text-[var(--text-primary)] font-bold resize-none"
+                      placeholder="Ex: Arroz, feijão, frango grelhado e salada."
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Calorias (aprox)</label>
+                      <input
+                        type="number"
+                        value={newMeal.calories}
+                        onChange={e => setNewMeal({ ...newMeal, calories: parseInt(e.target.value) })}
+                        className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl p-3.5 outline-none focus:border-primary transition-colors font-bold text-[var(--text-primary)]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Momento</label>
+                      <div className="relative">
+                        <select
+                          value={newMeal.category}
+                          onChange={e => setNewMeal({ ...newMeal, category: e.target.value as any })}
+                          className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl p-3.5 outline-none focus:border-primary transition-colors font-bold text-[var(--text-primary)] appearance-none"
+                        >
+                          <option value="breakfast">Café</option>
+                          <option value="lunch">Almoço</option>
+                          <option value="snack">Lanches</option>
+                          <option value="dinner">Jantar</option>
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">expand_more</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Momento</label>
-                  <select
-                    value={newMeal.category}
-                    onChange={e => setNewMeal({ ...newMeal, category: e.target.value as any })}
-                    className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl p-3 outline-none focus:border-primary transition-colors h-[46px] text-[var(--text-primary)] font-bold appearance-none"
-                  >
-                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="breakfast">Café</option>
-                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="lunch">Almoço</option>
-                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="snack">Lanches</option>
-                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="dinner">Jantar</option>
-                  </select>
-                </div>
-              </div>
-              <button type="submit" className="bg-primary text-black font-bold py-4 rounded-xl mt-4 active:scale-95 transition-transform">
-                Salvar Refeição
+              </form>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-white/5 bg-background-light/50 dark:bg-card-dark/50 backdrop-blur-sm rounded-b-3xl">
+              <button
+                form="mealForm"
+                type="submit"
+                disabled={uploadingMeal}
+                className="bg-primary text-black font-black py-4 rounded-xl w-full active:scale-95 transition-all shadow-lg shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {uploadingMeal ? (
+                  <>
+                    <div className="size-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                    <span className="uppercase tracking-widest text-xs">Postando no Mural...</span>
+                  </>
+                ) : (
+                  <span className="uppercase tracking-widest text-xs">Salvar Refeição +20 PTS</span>
+                )}
               </button>
-            </form>
+            </div>
           </div>
         </div>
       )}

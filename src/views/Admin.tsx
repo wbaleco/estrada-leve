@@ -6,12 +6,18 @@ const Admin: React.FC = () => {
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingUser, setEditingUser] = useState<any | null>(null);
+    const [search, setSearch] = useState('');
+    const [activeNotifs, setActiveNotifs] = useState<any[]>([]);
 
-    const loadUsers = async () => {
+    const loadData = async () => {
         setLoading(true);
         try {
-            const data = await api.getAllUsers();
-            setUsers(data);
+            const [uData, nData] = await Promise.all([
+                api.getAllUsers(),
+                api.getNotifications()
+            ]);
+            setUsers(uData);
+            setActiveNotifs(nData);
         } catch (err) {
             console.error(err);
             window.showToast('Erro ao carregar usuários', 'error');
@@ -21,7 +27,7 @@ const Admin: React.FC = () => {
     };
 
     useEffect(() => {
-        loadUsers();
+        loadData();
     }, []);
 
     const handleDelete = async (userId: string) => {
@@ -30,7 +36,7 @@ const Admin: React.FC = () => {
         try {
             await api.deleteProfile(userId);
             window.showToast('Perfil excluído com sucesso!', 'success');
-            loadUsers();
+            loadData();
         } catch (err) {
             console.error(err);
             window.showToast('Erro ao excluir perfil', 'error');
@@ -50,7 +56,7 @@ const Admin: React.FC = () => {
             });
             window.showToast('Usuário atualizado!', 'success');
             setEditingUser(null);
-            loadUsers();
+            loadData();
         } catch (err) {
             console.error(err);
             window.showToast('Erro ao atualizar usuário', 'error');
@@ -61,14 +67,28 @@ const Admin: React.FC = () => {
         <div className="flex flex-col animate-in fade-in duration-500 pb-20">
             <header className="p-4 border-b border-[var(--card-border)] bg-[var(--background)]/95 backdrop-blur-sm sticky top-0 z-10 flex items-center justify-between">
                 <h2 className="text-xl font-black text-[var(--text-primary)] uppercase tracking-tight">Gerenciar Usuários</h2>
-                <span className="bg-primary/20 text-primary text-[10px] font-black px-2 py-1 rounded-full uppercase">Painel Admin</span>
+                <span className="bg-primary/20 text-primary text-[10px] font-black px-2 py-1 rounded-full uppercase">Painel Admin ({users.length})</span>
             </header>
+
+            {/* Search Bar */}
+            <div className="p-4 bg-[var(--background)]">
+                <div className="relative group">
+                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] group-focus-within:text-primary transition-colors">search</span>
+                    <input
+                        type="text"
+                        placeholder="Pesquisar motorista por nome..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="w-full bg-[var(--card)] border border-[var(--card-border)] rounded-2xl pl-12 pr-4 py-4 text-[var(--text-primary)] font-bold outline-none focus:border-primary transition-all shadow-sm"
+                    />
+                </div>
+            </div>
 
             {loading ? (
                 <div className="p-10 text-center text-[var(--text-muted)] font-bold italic">Carregando lista de parceiros...</div>
             ) : (
                 <div className="p-4 flex flex-col gap-4">
-                    {users.map(u => (
+                    {users.filter(u => u.nickname?.toLowerCase().includes(search.toLowerCase())).map(u => (
                         <div key={u.userId} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm">
                             <div className="flex justify-between items-start mb-3">
                                 <div className="flex items-center gap-3">
@@ -182,6 +202,90 @@ const Admin: React.FC = () => {
                     </div>
                 </div>
             )}
+            {/* Broadcast Section */}
+            <div className="p-4 mt-8 border-t border-[var(--card-border)]">
+                <h3 className="text-lg font-black text-[var(--text-primary)] uppercase tracking-tight mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">campaign</span>
+                    Buzina da Estrada (Aviso Geral)
+                </h3>
+                <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm">
+                    <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mb-4">Envie um alerta ou aviso para todos os motoristas logados.</p>
+                    <div className="space-y-4">
+                        <input
+                            id="notif-title"
+                            type="text"
+                            placeholder="Título do Aviso (ex: Nova Meta!)"
+                            className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] outline-none focus:border-primary transition-all font-bold text-sm"
+                        />
+                        <textarea
+                            id="notif-message"
+                            placeholder="Sua mensagem para a frota..."
+                            rows={3}
+                            className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] outline-none focus:border-primary transition-all font-bold text-sm resize-none"
+                        ></textarea>
+                        <div className="grid grid-cols-2 gap-2">
+                            <select id="notif-type" className="bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] font-bold text-xs uppercase outline-none">
+                                <option value="info">INFORMAÇÃO</option>
+                                <option value="success">CONQUISTA</option>
+                                <option value="urgent">URGENTE</option>
+                            </select>
+                            <button
+                                onClick={async () => {
+                                    const title = (document.getElementById('notif-title') as HTMLInputElement).value;
+                                    const message = (document.getElementById('notif-message') as HTMLTextAreaElement).value;
+                                    const type = (document.getElementById('notif-type') as HTMLSelectElement).value;
+
+                                    if (!title || !message) return window.showToast('Preencha título e mensagem', 'error');
+
+                                    try {
+                                        await api.sendNotification(title, message, type);
+                                        window.showToast('Buzina tocada! Aviso enviado.', 'success');
+                                        (document.getElementById('notif-title') as HTMLInputElement).value = '';
+                                        (document.getElementById('notif-message') as HTMLTextAreaElement).value = '';
+                                        loadData();
+                                    } catch (e) { window.showToast('Erro ao enviar aviso', 'error'); }
+                                }}
+                                className="bg-primary text-black font-black py-3 rounded-xl hover:scale-95 transition-all text-xs uppercase tracking-widest"
+                            >
+                                Enviar Aviso
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Active Notifications List */}
+                {activeNotifs.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                        <p className="text-[10px] text-[var(--text-muted)] font-black uppercase tracking-widest ml-1">Avisos Ativos no App</p>
+                        {activeNotifs.map(notif => (
+                            <div key={notif.id} className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-3 flex items-center justify-between gap-3 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <span className={`material-symbols-outlined ${notif.type === 'urgent' ? 'text-red-500' :
+                                        notif.type === 'success' ? 'text-green-500' :
+                                            'text-primary'
+                                        }`}>{notif.icon || 'notifications'}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="text-xs font-black text-[var(--text-primary)] leading-tight">{notif.title}</h4>
+                                        <p className="text-[10px] text-[var(--text-muted)] leading-tight mt-0.5">{notif.message}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            await api.deleteNotification(notif.id);
+                                            window.showToast('Aviso removido!', 'success');
+                                            loadData();
+                                        } catch (e) { window.showToast('Erro ao remover', 'error'); }
+                                    }}
+                                    className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg"
+                                >
+                                    <span className="material-symbols-outlined text-sm">delete</span>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
