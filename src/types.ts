@@ -24,6 +24,7 @@ export interface UserStats {
   nickname?: string;
   avatarUrl?: string;
   isAdmin?: boolean;
+  waistCm?: number;
 }
 
 export interface Activity {

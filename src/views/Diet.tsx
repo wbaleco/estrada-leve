@@ -472,6 +472,14 @@ const Diet: React.FC = () => {
                   <span className="uppercase tracking-widest text-xs">Salvar Refeição +20 PTS</span>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="w-full text-[var(--text-muted)] font-black text-xs uppercase tracking-widest py-3 mt-2 hover:text-[var(--text-primary)] transition-colors"
+                disabled={uploadingMeal}
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>

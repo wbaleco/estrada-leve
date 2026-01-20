@@ -11,6 +11,7 @@ const Goals: React.FC = () => {
   const [stats, setStats] = React.useState<UserStats | null>(null);
   const [showWeightModal, setShowWeightModal] = React.useState(false);
   const [newWeight, setNewWeight] = React.useState('');
+  const [newWaist, setNewWaist] = React.useState('');
   const [postText, setPostText] = React.useState('');
   const [isPosting, setIsPosting] = React.useState(false);
 
@@ -29,11 +30,12 @@ const Goals: React.FC = () => {
     if (!newWeight) return;
 
     try {
-      await api.updateWeight(parseFloat(newWeight));
+      await api.updateWeight(parseFloat(newWeight), newWaist ? parseFloat(newWaist) : undefined);
       setShowWeightModal(false);
       setNewWeight('');
+      setNewWaist('');
       loadData();
-      window.showToast('Peso registrado com sucesso! +20 pontos', 'success');
+      window.showToast('Registros salvos com sucesso! +20 pontos', 'success');
     } catch (err) {
       console.error(err);
       window.showToast('Erro ao registrar peso', 'error');
@@ -71,12 +73,12 @@ const Goals: React.FC = () => {
             <p className="text-[var(--text-secondary)] text-sm mb-1 uppercase font-bold tracking-wider">Peso Atual</p>
             <p className="text-4xl font-black text-[var(--text-primary)]">{stats?.currentWeight || '-'} <span className="text-xl text-primary font-bold">kg</span></p>
           </div>
-          <div className="bg-primary/20 dark:bg-black/20 backdrop-blur-sm rounded-lg px-3 py-1 flex items-center gap-1 border border-primary/20">
-            <span className="material-symbols-outlined text-primary text-sm font-bold">trending_down</span>
-            <span className="text-primary font-black">{stats?.currentWeight && stats?.startWeight ? (stats.currentWeight - stats.startWeight).toFixed(1) : '-'}kg</span>
+          <div className="text-right">
+            <p className="text-[var(--text-secondary)] text-[10px] mb-1 uppercase font-bold tracking-wider">Barriga</p>
+            <p className="text-xl font-black text-[var(--text-primary)]">{stats?.waistCm || '-'} <span className="text-xs text-primary font-bold">cm</span></p>
           </div>
         </div>
-        <p className="text-[10px] text-[var(--text-muted)] mt-4">Última atualização: Hoje, 08:30</p>
+        <p className="text-[10px] text-[var(--text-muted)] mt-4">Última atualização: Hoje, {(new Date()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
@@ -193,7 +195,16 @@ const Goals: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowWeightModal(false)}></div>
           <div className="bg-background-light dark:bg-card-dark w-full max-w-md rounded-3xl p-6 relative z-10 border border-white/10 shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold mb-4">Novo Registro de Peso</h3>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-[var(--text-primary)]">Novo Registro</h3>
+              <button
+                onClick={() => setShowWeightModal(false)}
+                className="size-8 rounded-full flex items-center justify-center text-[var(--text-muted)] hover:bg-white/5 transition-colors"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
             <form onSubmit={handleUpdateWeight} className="flex flex-col gap-4">
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Peso Atual (kg)</label>
@@ -204,6 +215,16 @@ const Goals: React.FC = () => {
                   value={newWeight}
                   onChange={e => setNewWeight(e.target.value)}
                   autoFocus
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-2xl font-bold text-center outline-none focus:border-primary transition-colors mb-4"
+                  placeholder="0.0"
+                />
+
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Medida da Barriga (cm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={newWaist}
+                  onChange={e => setNewWaist(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-2xl font-bold text-center outline-none focus:border-primary transition-colors"
                   placeholder="0.0"
                 />

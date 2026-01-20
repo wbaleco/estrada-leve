@@ -12,6 +12,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     const [nickname, setNickname] = useState('');
     const [weight, setWeight] = useState('');
     const [height, setHeight] = useState('');
+    const [waist, setWaist] = useState('');
     const [goal, setGoal] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('https://api.dicebear.com/7.x/avataaars/svg?seed=Felix');
     const [file, setFile] = useState<File | null>(null);
@@ -34,7 +35,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
     const handleNext = async () => {
         console.log('Botao clicado! Step:', step);
-        if (step < 6) {
+        if (step < 7) {
             setStep(step + 1);
         } else {
             console.log('Iniciando finishOnboarding...');
@@ -106,7 +107,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     height: parseFloat(height),
                     bmi: parseFloat(calculateBMI() as string),
                     idealWeight: parseFloat(calculateIdealWeight() as string),
-                    avatarUrl: finalAvatarUrl
+                    avatarUrl: finalAvatarUrl,
+                    waistCm: parseFloat(waist)
                 });
                 console.log('Backend respondeu com sucesso!');
             } catch (rpcErr: any) {
@@ -146,7 +148,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
             <div className="flex justify-between items-center mb-8 relative z-10">
                 <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5, 6].map(s => (
+                    {[1, 2, 3, 4, 5, 6, 7].map(s => (
                         <div key={s} className={`h-2.5 w-6 rounded-full transition-all duration-300 ${s <= step ? 'bg-primary shadow-lg shadow-primary/30' : 'bg-gray-200 dark:bg-white/10'}`}></div>
                     ))}
                 </div>
@@ -218,6 +220,27 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 {step === 4 && (
                     <>
                         <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
+                            <span className="material-symbols-outlined text-4xl text-primary font-bold">width</span>
+                        </div>
+                        <h1 className="text-3xl font-black mb-2 text-[var(--text-primary)] uppercase tracking-tight">Medida da Barriga</h1>
+                        <p className="text-[var(--text-secondary)] mb-8 font-medium">Qual a circunferência da sua cintura em centímetros?</p>
+                        <div className="flex items-end gap-2">
+                            <input
+                                autoFocus
+                                type="number"
+                                value={waist}
+                                onChange={e => setWaist(e.target.value)}
+                                className="bg-transparent border-b-2 border-primary/50 text-5xl font-black w-32 py-3 focus:border-primary outline-none placeholder:text-[var(--text-muted)] text-center text-[var(--text-primary)]"
+                                placeholder="100"
+                            />
+                            <span className="text-xl font-black mb-6 text-[var(--text-muted)]">cm</span>
+                        </div>
+                    </>
+                )}
+
+                {step === 5 && (
+                    <>
+                        <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
                             <span className="material-symbols-outlined text-4xl text-primary font-bold">flag</span>
                         </div>
                         <h1 className="text-3xl font-black mb-2 text-[var(--text-primary)] uppercase tracking-tight">Meta da Entrega</h1>
@@ -236,7 +259,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     </>
                 )}
 
-                {step === 5 && (
+                {step === 6 && (
                     <>
                         <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
                             <span className="material-symbols-outlined text-4xl text-primary font-bold">analytics</span>
@@ -267,7 +290,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     </>
                 )}
 
-                {step === 6 && (
+                {step === 7 && (
                     <>
                         <div className="size-24 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary overflow-hidden relative shadow-lg shadow-primary/20">
                             {avatarUrl ? (
@@ -312,11 +335,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             </div>
 
             <button
-                disabled={loading || (step === 1 && !nickname) || (step === 2 && !weight) || (step === 3 && !height) || (step === 4 && !goal)}
+                disabled={loading || (step === 1 && !nickname) || (step === 2 && !weight) || (step === 3 && !height) || (step === 4 && !waist) || (step === 5 && !goal)}
                 onClick={handleNext}
                 className="w-full bg-primary text-black font-black py-4 rounded-2xl text-lg shadow-xl shadow-primary/30 disabled:opacity-50 active:scale-95 transition-all mt-8 uppercase tracking-widest border-2 border-primary"
             >
-                {loading ? 'Processando...' : (step === 6 ? 'Iniciar Jornada' : 'Próximo Passo')}
+                {loading ? 'Processando...' : (step === 7 ? 'Iniciar Jornada' : 'Próximo Passo')}
             </button>
         </div>
     );

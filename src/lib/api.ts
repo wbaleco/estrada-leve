@@ -32,7 +32,8 @@ export const api = {
             idealWeight: data.ideal_weight,
             nickname: data.nickname,
             avatarUrl: data.avatar_url,
-            isAdmin: data.is_admin
+            isAdmin: data.is_admin,
+            waistCm: data.waist_cm
         };
     },
 
@@ -74,7 +75,8 @@ export const api = {
         height: number,
         bmi: number,
         idealWeight: number,
-        avatarUrl: string
+        avatarUrl: string,
+        waistCm?: number
     }) => {
         const { error } = await supabase.rpc('complete_user_onboarding', {
             p_nickname: data.nickname,
@@ -83,7 +85,8 @@ export const api = {
             p_height: data.height,
             p_bmi: data.bmi,
             p_ideal_weight: data.idealWeight,
-            p_avatar_url: data.avatarUrl
+            p_avatar_url: data.avatarUrl,
+            p_waist_cm: data.waistCm
         });
         if (error) throw error;
     },
@@ -251,7 +254,7 @@ export const api = {
         return data;
     },
 
-    updateWeight: async (weight: number) => {
+    updateWeight: async (weight: number, waist?: number) => {
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) throw new Error('Not authenticated');
 
@@ -259,10 +262,13 @@ export const api = {
         const { data: stats } = await supabase.from('user_stats').select('start_weight').eq('user_id', user.id).single();
         const weightLost = stats ? (stats.start_weight - weight) : 0;
 
-        await supabase.from('user_stats').update({
+        const { error: updateError } = await supabase.from('user_stats').update({
             current_weight: weight,
-            weight_lost: parseFloat(weightLost.toFixed(1))
+            weight_lost: parseFloat(weightLost.toFixed(1)),
+            waist_cm: waist
         }).eq('user_id', user.id);
+
+        if (updateError) throw updateError;
 
         // 2. Add to history
         const today = new Date().toISOString().split('T')[0];
@@ -271,6 +277,7 @@ export const api = {
         const { error: histError } = await supabase.from('goals_weight_history').insert({
             user_id: user.id,
             weight: weight,
+            waist: waist,
             label: label,
             date: today
         });

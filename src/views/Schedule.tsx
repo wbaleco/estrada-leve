@@ -128,7 +128,17 @@ const Schedule: React.FC = () => {
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowAddModal(false)}></div>
           <div className="bg-[var(--background)] w-full max-w-md rounded-3xl p-6 relative z-10 border border-[var(--card-border)] shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-black mb-4 text-[var(--text-primary)] uppercase tracking-tight">Novo Treino</h3>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-[var(--text-primary)] uppercase tracking-tight">Novo Treino</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="size-8 rounded-full flex items-center justify-center text-[var(--text-muted)] hover:bg-white/5 transition-colors"
+                type="button"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
             <form onSubmit={handleAddActivity} className="flex flex-col gap-4">
               <div>
                 <label className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-1.5 block tracking-widest">Título</label>
@@ -173,8 +183,15 @@ const Schedule: React.FC = () => {
                   </select>
                 </div>
               </div>
-              <button type="submit" className="bg-primary text-black font-bold py-4 rounded-xl mt-4 active:scale-95 transition-transform">
+              <button type="submit" className="bg-primary text-black font-bold py-4 rounded-xl mt-4 active:scale-95 transition-transform text-sm uppercase tracking-widest">
                 Salvar Registro
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="text-[var(--text-muted)] font-black text-xs uppercase tracking-widest py-2 hover:text-[var(--text-primary)] transition-colors"
+              >
+                Cancelar
               </button>
             </form>
           </div>
