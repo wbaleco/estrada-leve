@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 const Admin: React.FC = () => {
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [userToDelete, setUserToDelete] = useState<any | null>(null);
     const [editingUser, setEditingUser] = useState<any | null>(null);
     const [search, setSearch] = useState('');
     const [activeNotifs, setActiveNotifs] = useState<any[]>([]);
@@ -30,12 +31,13 @@ const Admin: React.FC = () => {
         loadData();
     }, []);
 
-    const handleDelete = async (userId: string) => {
-        if (!confirm('Tem certeza que deseja excluir o perfil deste usuário? Isso não apagará a conta de login, mas limpará todos os dados do app.')) return;
+    const confirmDelete = async () => {
+        if (!userToDelete) return;
 
         try {
-            await api.deleteProfile(userId);
+            await api.deleteProfile(userToDelete.userId);
             window.showToast('Perfil excluído com sucesso!', 'success');
+            setUserToDelete(null);
             loadData();
         } catch (err) {
             console.error(err);
@@ -122,7 +124,7 @@ const Admin: React.FC = () => {
                                     Editar
                                 </button>
                                 <button
-                                    onClick={() => handleDelete(u.userId)}
+                                    onClick={() => setUserToDelete(u)}
                                     className="flex-1 bg-red-500/10 text-red-500 font-black text-xs py-2 rounded-xl hover:bg-red-500 hover:text-white transition-all uppercase tracking-widest"
                                 >
                                     Excluir
@@ -130,6 +132,40 @@ const Admin: React.FC = () => {
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {userToDelete && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setUserToDelete(null)}></div>
+                    <div className="bg-[var(--card)] w-full max-w-sm rounded-[32px] p-6 relative z-10 border border-red-500/20 shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="size-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+                            <span className="material-symbols-outlined text-red-500 text-3xl">delete_forever</span>
+                        </div>
+
+                        <h3 className="text-xl font-black text-center mb-2 text-[var(--text-primary)] uppercase tracking-tight">Confirmar Exclusão</h3>
+                        <p className="text-sm text-[var(--text-muted)] text-center mb-6 font-medium">
+                            Tem certeza que deseja apagar o perfil de <span className="text-red-500 font-black">{userToDelete.nickname}</span>?
+                            <br /><br />
+                            <span className="text-[10px] uppercase font-black opacity-50">Isso limpará todos os pontos, treinos e histórico.</span>
+                        </p>
+
+                        <div className="flex flex-col gap-3">
+                            <button
+                                onClick={confirmDelete}
+                                className="w-full bg-red-500 text-white font-black py-4 rounded-2xl shadow-lg shadow-red-500/20 active:scale-95 transition-all text-sm uppercase tracking-widest"
+                            >
+                                Sim, Apagar Perfil
+                            </button>
+                            <button
+                                onClick={() => setUserToDelete(null)}
+                                className="w-full bg-[var(--background)] text-[var(--text-muted)] font-black py-4 rounded-2xl border border-[var(--card-border)] active:scale-95 transition-all text-xs uppercase tracking-widest"
+                            >
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

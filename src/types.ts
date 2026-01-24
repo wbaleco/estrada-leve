@@ -25,6 +25,8 @@ export interface UserStats {
   avatarUrl?: string;
   isAdmin?: boolean;
   waistCm?: number;
+  age?: number;
+  gender?: string;
 }
 
 export interface Activity {

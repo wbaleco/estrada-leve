@@ -30,12 +30,16 @@ const Goals: React.FC = () => {
     if (!newWeight) return;
 
     try {
-      await api.updateWeight(parseFloat(newWeight), newWaist ? parseFloat(newWaist) : undefined);
+      const pointsAwarded = await api.updateWeight(parseFloat(newWeight), newWaist ? parseFloat(newWaist) : undefined);
       setShowWeightModal(false);
       setNewWeight('');
       setNewWaist('');
       loadData();
-      window.showToast('Registros salvos com sucesso! +20 pontos', 'success');
+      if (pointsAwarded) {
+        window.showToast('Registros salvos! +20 pontos na conta! 🏆', 'success');
+      } else {
+        window.showToast('Registros atualizados com sucesso!', 'success');
+      }
     } catch (err) {
       console.error(err);
       window.showToast('Erro ao registrar peso', 'error');
@@ -119,6 +123,7 @@ const Goals: React.FC = () => {
               <XAxis dataKey="label" hide />
               <YAxis hide domain={['dataMin - 5', 'dataMax + 5']} />
               <Tooltip
+                cursor={{ stroke: 'var(--text-muted)', strokeWidth: 1, strokeDasharray: '5 5' }}
                 contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '12px', color: 'var(--text-primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                 itemStyle={{ color: '#8cf425', fontWeight: 'bold' }}
                 labelStyle={{ color: 'var(--text-secondary)', fontSize: '10px', marginBottom: '4px' }}

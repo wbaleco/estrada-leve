@@ -75,10 +75,10 @@ const Resources: React.FC = () => {
           <h2 className="text-xl font-bold">Recursos do Motorista</h2>
           <button
             onClick={() => setShowAddModal(true)}
-            className="bg-primary text-background-dark px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 active:scale-95 transition-all shadow-lg shadow-primary/20"
+            className="bg-primary text-background-dark px-3 py-2 rounded-lg text-[10px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-lg shadow-primary/20 uppercase tracking-wider"
           >
-            <span className="material-symbols-outlined text-sm">add</span>
-            NOVO RECURSO
+            <span className="material-symbols-outlined text-sm">add_circle</span>
+            Contribuir (+100 pts)
           </button>
         </div>
         <div className="flex gap-3 overflow-x-auto hide-scrollbar">

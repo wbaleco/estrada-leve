@@ -10,6 +10,8 @@ interface OnboardingProps {
 const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     const [step, setStep] = useState(1);
     const [nickname, setNickname] = useState('');
+    const [age, setAge] = useState('');
+    const [gender, setGender] = useState('male');
     const [weight, setWeight] = useState('');
     const [height, setHeight] = useState('');
     const [waist, setWaist] = useState('');
@@ -35,7 +37,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
     const handleNext = async () => {
         console.log('Botao clicado! Step:', step);
-        if (step < 7) {
+        if (step < 8) {
             setStep(step + 1);
         } else {
             console.log('Iniciando finishOnboarding...');
@@ -108,7 +110,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     bmi: parseFloat(calculateBMI() as string),
                     idealWeight: parseFloat(calculateIdealWeight() as string),
                     avatarUrl: finalAvatarUrl,
-                    waistCm: parseFloat(waist)
+                    waistCm: parseFloat(waist),
+                    age: parseInt(age),
+                    gender: gender
                 });
                 console.log('Backend respondeu com sucesso!');
             } catch (rpcErr: any) {
@@ -126,29 +130,26 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             }
 
             console.log('Onboarding concluído com sucesso!');
-            window.showToast('Perfil criado! Bem-vindo(a)!', 'success');
+            (window as any).showToast('Perfil criado! Bem-vindo(a)!', 'success');
             onComplete();
 
         } catch (error: any) {
             console.error('Final Onboarding Error:', error);
             const msg = error.message || JSON.stringify(error);
             alert(`Erro no Onboarding: ${msg}`);
-            window.showToast(`Erro: ${msg}`, 'error');
+            (window as any).showToast(`Erro: ${msg}`, 'error');
         } finally {
             setLoading(false);
         }
     };
 
-
     return (
         <div className="min-h-screen flex flex-col bg-[var(--background)] p-6 relative overflow-hidden transition-colors duration-500">
-            {/* Background Decor */}
-            {/* Background Decor - v2 */}
             <div className="absolute top-0 right-0 p-20 bg-green-500/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
 
             <div className="flex justify-between items-center mb-8 relative z-10">
                 <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5, 6, 7].map(s => (
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
                         <div key={s} className={`h-2.5 w-6 rounded-full transition-all duration-300 ${s <= step ? 'bg-primary shadow-lg shadow-primary/30' : 'bg-gray-200 dark:bg-white/10'}`}></div>
                     ))}
                 </div>
@@ -178,6 +179,47 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 {step === 2 && (
                     <>
                         <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
+                            <span className="material-symbols-outlined text-4xl text-primary font-bold">person</span>
+                        </div>
+                        <h1 className="text-3xl font-black mb-2 text-[var(--text-primary)] uppercase tracking-tight">Sobre Você</h1>
+                        <p className="text-[var(--text-secondary)] mb-8 font-medium">Precisamos disso para calcular sua meta diária de calorias com precisão científica.</p>
+
+                        <div className="flex flex-col gap-6">
+                            <div>
+                                <label className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-2 block">Idade</label>
+                                <input
+                                    autoFocus
+                                    type="number"
+                                    value={age}
+                                    onChange={e => setAge(e.target.value)}
+                                    className="bg-transparent border-b-2 border-primary/50 text-4xl font-black w-full py-2 focus:border-primary outline-none placeholder:text-[var(--text-muted)] text-[var(--text-primary)]"
+                                    placeholder="40"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-2 block">Gênero Biológico</label>
+                                <div className="flex gap-4">
+                                    <button
+                                        onClick={() => setGender('male')}
+                                        className={`flex-1 p-4 rounded-xl border-2 font-black transition-all ${gender === 'male' ? 'border-primary bg-primary text-black' : 'border-white/10 bg-white/5 text-gray-400'}`}
+                                    >
+                                        Masculino
+                                    </button>
+                                    <button
+                                        onClick={() => setGender('female')}
+                                        className={`flex-1 p-4 rounded-xl border-2 font-black transition-all ${gender === 'female' ? 'border-primary bg-primary text-black' : 'border-white/10 bg-white/5 text-gray-400'}`}
+                                    >
+                                        Feminino
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {step === 3 && (
+                    <>
+                        <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
                             <span className="material-symbols-outlined text-4xl text-primary font-bold">monitor_weight</span>
                         </div>
                         <h1 className="text-3xl font-black mb-2 text-[var(--text-primary)] uppercase tracking-tight">Peso da Carga Atual</h1>
@@ -196,7 +238,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     </>
                 )}
 
-                {step === 3 && (
+                {step === 4 && (
                     <>
                         <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
                             <span className="material-symbols-outlined text-4xl text-primary font-bold">straighten</span>
@@ -217,7 +259,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     </>
                 )}
 
-                {step === 4 && (
+                {step === 5 && (
                     <>
                         <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
                             <span className="material-symbols-outlined text-4xl text-primary font-bold">width</span>
@@ -238,7 +280,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     </>
                 )}
 
-                {step === 5 && (
+                {step === 6 && (
                     <>
                         <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
                             <span className="material-symbols-outlined text-4xl text-primary font-bold">flag</span>
@@ -259,7 +301,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     </>
                 )}
 
-                {step === 6 && (
+                {step === 7 && (
                     <>
                         <div className="size-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary shadow-lg shadow-primary/20">
                             <span className="material-symbols-outlined text-4xl text-primary font-bold">analytics</span>
@@ -290,7 +332,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     </>
                 )}
 
-                {step === 7 && (
+                {step === 8 && (
                     <>
                         <div className="size-24 bg-primary/20 rounded-full flex items-center justify-center mb-6 border-2 border-primary overflow-hidden relative shadow-lg shadow-primary/20">
                             {avatarUrl ? (
@@ -335,11 +377,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             </div>
 
             <button
-                disabled={loading || (step === 1 && !nickname) || (step === 2 && !weight) || (step === 3 && !height) || (step === 4 && !waist) || (step === 5 && !goal)}
+                disabled={loading || (step === 1 && !nickname) || (step === 2 && !age) || (step === 3 && !weight) || (step === 4 && !height) || (step === 5 && !waist) || (step === 6 && !goal)}
                 onClick={handleNext}
                 className="w-full bg-primary text-black font-black py-4 rounded-2xl text-lg shadow-xl shadow-primary/30 disabled:opacity-50 active:scale-95 transition-all mt-8 uppercase tracking-widest border-2 border-primary"
             >
-                {loading ? 'Processando...' : (step === 7 ? 'Iniciar Jornada' : 'Próximo Passo')}
+                {loading ? 'Processando...' : (step === 8 ? 'Iniciar Jornada' : 'Próximo Passo')}
             </button>
         </div>
     );

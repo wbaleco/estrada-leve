@@ -33,7 +33,9 @@ export const api = {
             nickname: data.nickname,
             avatarUrl: data.avatar_url,
             isAdmin: data.is_admin,
-            waistCm: data.waist_cm
+            waistCm: data.waist_cm,
+            age: data.age,
+            gender: data.gender
         };
     },
 
@@ -59,8 +61,19 @@ export const api = {
     },
 
     deleteProfile: async (userId: string) => {
-        const { error } = await supabase.from('user_stats').delete().eq('user_id', userId);
-        if (error) throw error;
+        // Agora chamamos um RPC que deleta tanto os dados quanto a conta de Auth
+        // O Supabase não permite deletar de auth.users via cliente por segurança, 
+        // então usamos este RPC com SECURITY DEFINER.
+        const { error } = await supabase.rpc('delete_user_account_by_admin', {
+            target_user_id: userId
+        });
+
+        if (error) {
+            console.error('Erro no RPC de exclusão total:', error);
+            // Fallback apenas para user_stats se o RPC falhar ou não estiver configurado
+            const { error: fallbackError } = await supabase.from('user_stats').delete().eq('user_id', userId);
+            if (fallbackError) throw fallbackError;
+        }
     },
 
     deleteAuthAccount: async () => {
@@ -76,8 +89,11 @@ export const api = {
         bmi: number,
         idealWeight: number,
         avatarUrl: string,
-        waistCm?: number
+        waistCm?: number,
+        age?: number,
+        gender?: string
     }) => {
+        // 1. Create base profile via RPC
         const { error } = await supabase.rpc('complete_user_onboarding', {
             p_nickname: data.nickname,
             p_current_weight: data.weight,
@@ -89,6 +105,24 @@ export const api = {
             p_waist_cm: data.waistCm
         });
         if (error) throw error;
+
+        // 2. Update extra fields (Age/Gender) directly
+        // This ensures compat without redefining the RPC signature in DB immediately
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            await supabase.from('user_stats').update({
+                age: data.age,
+                gender: data.gender
+            }).eq('user_id', user.id);
+
+            // 3. Add initial weight entry to history so graph is not empty
+            await supabase.from('goals_weight_history').insert({
+                user_id: user.id,
+                weight: data.weight,
+                label: 'Início',
+                date: new Date().toISOString()
+            });
+        }
     },
 
     signOut: async () => {
@@ -140,9 +174,28 @@ export const api = {
         const user = (await supabase.auth.getUser()).data.user;
         if (user) {
             const pointsToChange = completed ? 50 : -50;
-            const { data: stats } = await supabase.from('user_stats').select('points').eq('user_id', user.id).single();
+            const { data: stats } = await supabase.from('user_stats').select('nickname, avatar_url, points').eq('user_id', user.id).single();
+
             if (stats) {
+                // Update Points
                 await supabase.from('user_stats').update({ points: (stats.points || 0) + pointsToChange }).eq('user_id', user.id);
+
+                // --- NOVO: Postagem Social Automática ao concluir atividade ---
+                if (completed) {
+                    try {
+                        const { data: activity } = await supabase.from('activities').select('title').eq('id', id).single();
+                        await supabase.from('social_posts').insert({
+                            name: stats.nickname || 'Parceiro',
+                            user_avatar_url: stats.avatar_url,
+                            text: `Concluí a atividade: ${activity?.title || 'Exercício'}! +50 pontos na conta. 🚛💨`,
+                            time_ago: 'Agora',
+                            color: 'primary',
+                            user_id: user.id
+                        });
+                    } catch (err) {
+                        console.error('Error creating activity social post:', err);
+                    }
+                }
             }
         }
         await api.checkAndAwardMedals().catch(console.error);
@@ -170,7 +223,7 @@ export const api = {
             query = query.eq('is_suggestion', true);
         }
 
-        const { data, error } = await query;
+        const { data, error } = await query.order('created_at', { ascending: false });
         if (error) throw error;
         return data;
     },
@@ -189,9 +242,14 @@ export const api = {
             throw error;
         }
 
+        // --- NOVO: Adicionar 20 pontos por registrar refeição ---
+        const { data: stats } = await supabase.from('user_stats').select('points, nickname, avatar_url').eq('user_id', user.id).single();
+        if (stats) {
+            await supabase.from('user_stats').update({ points: (stats.points || 0) + 20 }).eq('user_id', user.id);
+        }
+
         // Automatic Social Post for the meal
         try {
-            const { data: stats } = await supabase.from('user_stats').select('nickname, avatar_url').eq('user_id', user.id).single();
             await supabase.from('social_posts').insert({
                 name: stats?.nickname || 'Parceiro',
                 user_avatar_url: stats?.avatar_url,
@@ -203,6 +261,7 @@ export const api = {
         } catch (postErr) {
             console.error('Error creating automatic meal post:', postErr);
         }
+        await api.checkAndAwardMedals().catch(console.error);
     },
 
     toggleMealConsumed: async (id: string, consumed: boolean) => {
@@ -270,31 +329,79 @@ export const api = {
 
         if (updateError) throw updateError;
 
-        // 2. Add to history
+        // 2. Add to history (Handle duplicate for today)
         const today = new Date().toISOString().split('T')[0];
         const label = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 
-        const { error: histError } = await supabase.from('goals_weight_history').insert({
-            user_id: user.id,
-            weight: weight,
-            waist: waist,
-            label: label,
-            date: today
-        });
-        if (histError) throw histError;
+        // Check for existing entry today using limit(1) to avoid checking errors for 'not found'
+        const { data: existing } = await supabase.from('goals_weight_history')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('date', today)
+            .limit(1);
+
+        const dailyEntry = existing?.[0];
+
+        if (dailyEntry) {
+            // Update existing entry for today
+            const { error: upErr } = await supabase.from('goals_weight_history').update({
+                weight: weight,
+                waist: waist
+            }).eq('id', dailyEntry.id);
+            if (upErr) throw upErr;
+        } else {
+            // Insert new entry
+            const { error: insErr } = await supabase.from('goals_weight_history').insert({
+                user_id: user.id,
+                weight: weight,
+                waist: waist,
+                label: label,
+                date: today
+            });
+            if (insErr) throw insErr;
+        }
 
         // Points for logging weight (e.g., 20 points)
-        if (stats) {
+        let pointsAwarded = false;
+        if (stats && !dailyEntry) {
             const { data: currentStats } = await supabase.from('user_stats').select('points').eq('user_id', user.id).single();
             if (currentStats) {
                 await supabase.from('user_stats').update({ points: (currentStats.points || 0) + 20 }).eq('user_id', user.id);
+                pointsAwarded = true;
             }
         }
+
+        // 3. Automatic Social Post (Only if new or significant change?)
+        // Let's post every time to be responsive, or restrict. 
+        // User expects feedback.
+        try {
+            const { data: userData } = await supabase.from('user_stats')
+                .select('nickname, avatar_url, weight_lost')
+                .eq('user_id', user.id)
+                .single();
+
+            if (userData) {
+                await supabase.from('social_posts').insert({
+                    user_id: user.id,
+                    name: userData.nickname || 'Parceiro',
+                    user_avatar_url: userData.avatar_url,
+                    text: userData.weight_lost && userData.weight_lost > 0
+                        ? `Atualizei meu peso! Já se foram ${userData.weight_lost}kg de carga pesada! ⚖️📉`
+                        : `Peso registrado! Manutenção em dia para seguir viagem. ⚖️🚛`,
+                    time_ago: 'Agora',
+                    color: 'info'
+                });
+            }
+        } catch (err) {
+            console.error('Error creating weight social post:', err);
+        }
+
         await api.checkAndAwardMedals().catch(console.error);
+        return pointsAwarded;
     },
 
     getSocialPosts: async () => {
-        const user = (await supabase.auth.getUser()).data.user;
+        const { data: { user } } = await supabase.auth.getUser();
         const { data, error } = await supabase
             .from('social_posts')
             .select(`
@@ -495,26 +602,46 @@ export const api = {
             throw updateErr;
         }
 
-        // Points for completion - awarded only once per goal per day
-        if (completed && !goal.completed) {
-            console.log('Goal completed! Awarding points...');
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: stats, error: statsErr } = await supabase.from('user_stats').select('points').eq('user_id', user.id).single();
-                if (!statsErr && stats) {
-                    const newPoints = (stats.points || 0) + 30;
-                    const { error: pointsErr } = await supabase.from('user_stats').update({ points: newPoints }).eq('user_id', user.id);
-                    if (pointsErr) console.error('Error updating user points:', pointsErr);
-                    else console.log(`Points updated successfully: ${newPoints}`);
-                } else {
-                    console.error('Error fetching stats for points:', statsErr);
+        // --- NOVO: Pontuação por registro e conclusão ---
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            const { data: stats } = await supabase.from('user_stats').select('points').eq('user_id', user.id).single();
+            if (stats) {
+                let pointsToAdd = 5; // 5 pontos por cada registro (água, movimento, sono)
+
+                // Bônus se completar a meta agora
+                if (completed && !goal.completed) {
+                    pointsToAdd += 20; // +20 de bônus por completar
+                    console.log('Goal completed! Awarding bonus points...');
+                }
+
+                const newPoints = (stats.points || 0) + pointsToAdd;
+                await supabase.from('user_stats').update({ points: newPoints }).eq('user_id', user.id);
+                console.log(`Points updated: +${pointsToAdd} (Total: ${newPoints})`);
+
+                // --- NOVO: Postagem Social Automática ao completar Meta ---
+                if (completed && !goal.completed) {
+                    try {
+                        const { data: fullStats } = await supabase.from('user_stats').select('nickname, avatar_url').eq('user_id', user.id).single();
+                        await supabase.from('social_posts').insert({
+                            name: fullStats?.nickname || 'Parceiro',
+                            user_avatar_url: fullStats?.avatar_url,
+                            text: `Meta de ${goal.label} batida! Foco total na saúde! 🏆🏁`,
+                            time_ago: 'Agora',
+                            color: 'success',
+                            user_id: user.id
+                        });
+                    } catch (err) {
+                        console.error('Error creating goal social post:', err);
+                    }
                 }
             }
         }
+        await api.checkAndAwardMedals().catch(console.error);
     },
 
     getResources: async (category?: string) => {
-        let query = supabase.from('resources').select('*');
+        let query = supabase.from('resources').select('*').order('created_at', { ascending: false });
         if (category && category !== 'Tudo') {
             query = query.eq('category', category);
         }
@@ -524,8 +651,39 @@ export const api = {
     },
 
     addResource: async (resource: { title: string, description: string, image: string, category: string, type: 'article' | 'video', url?: string, content?: string }) => {
-        const { data, error } = await supabase.from('resources').insert([resource]);
+        const { data: { user } } = await supabase.auth.getUser();
+
+        // Include timestamp via select after insert or rely on client? Better to select.
+        const { data, error } = await supabase.from('resources').insert([{
+            ...resource,
+            user_id: user?.id,
+            created_at: new Date().toISOString() // Ensure latest is top sorted
+        }]).select();
+
         if (error) throw error;
+
+        // --- NOVO: Ganhar 100 pontos por contribuir com conteúdo ---
+        if (user) {
+            const { data: stats } = await supabase.from('user_stats').select('points, nickname, avatar_url').eq('user_id', user.id).single();
+            if (stats) {
+                await supabase.from('user_stats').update({ points: (stats.points || 0) + 100 }).eq('user_id', user.id);
+
+                // --- NOVO: Postagem Social Automática sobre o novo recurso ---
+                try {
+                    await supabase.from('social_posts').insert({
+                        name: stats.nickname || 'Parceiro',
+                        user_avatar_url: stats.avatar_url,
+                        text: `Compartilhei um novo conteúdo de valor: "${resource.title}". 💪📚`,
+                        time_ago: 'Agora',
+                        color: 'primary', // Or a different color for resources?
+                        user_id: user.id
+                    });
+                } catch (err) {
+                    console.error('Error creating resource social post:', err);
+                }
+            }
+        }
+        await api.checkAndAwardMedals().catch(console.error);
         return data;
     },
 
@@ -604,9 +762,10 @@ export const api = {
 
         // Automatic Social Post
         try {
-            const { data: stats } = await supabase.from('user_stats').select('nickname').eq('user_id', user.id).single();
+            const { data: stats } = await supabase.from('user_stats').select('nickname, avatar_url').eq('user_id', user.id).single();
             await supabase.from('social_posts').insert({
                 name: stats?.nickname || 'Parceiro',
+                user_avatar_url: stats?.avatar_url,
                 text: `Acabei de validar meu treino! +200 pontos no Ranking! 🏋️‍♂️🏆`,
                 time_ago: 'Agora',
                 color: 'primary',

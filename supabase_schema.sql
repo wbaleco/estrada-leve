@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS user_stats (
     ideal_weight NUMERIC,
     nickname TEXT,
     avatar_url TEXT,
+    gender TEXT DEFAULT 'male',
+    age INTEGER DEFAULT 40,
     is_admin BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );

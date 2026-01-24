@@ -15,6 +15,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     const [signupEmail, setSignupEmail] = useState('');
     const [signupPassword, setSignupPassword] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -139,14 +140,25 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-[var(--text-muted)] uppercase ml-1 mb-1.5 block tracking-widest">Senha</label>
-                                    <input
-                                        type="password"
-                                        value={signupPassword}
-                                        onChange={(e) => setSignupPassword(e.target.value)}
-                                        className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] focus:border-primary outline-none transition-all font-bold shadow-inner"
-                                        placeholder="******"
-                                        required
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPassword ? "text" : "password"}
+                                            value={signupPassword}
+                                            onChange={(e) => setSignupPassword(e.target.value)}
+                                            className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] focus:border-primary outline-none transition-all font-bold shadow-inner pr-10"
+                                            placeholder="******"
+                                            required
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-primary transition-colors"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">
+                                                {showPassword ? 'visibility' : 'visibility_off'}
+                                            </span>
+                                        </button>
+                                    </div>
                                     <p className="text-[10px] text-[var(--text-muted)] mt-1 ml-1">* O nome de usuário será criado no próximo passo.</p>
                                 </div>
                             </>
@@ -171,14 +183,25 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                                         <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Senha</label>
                                         <button type="button" onClick={() => setIsResetMode(true)} className="text-[10px] font-black text-primary uppercase hover:underline">Esqueci</button>
                                     </div>
-                                    <input
-                                        type="password"
-                                        value={loginPassword}
-                                        onChange={(e) => setLoginPassword(e.target.value)}
-                                        className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] focus:border-primary outline-none transition-all font-bold shadow-inner"
-                                        placeholder="******"
-                                        required
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPassword ? "text" : "password"}
+                                            value={loginPassword}
+                                            onChange={(e) => setLoginPassword(e.target.value)}
+                                            className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] focus:border-primary outline-none transition-all font-bold shadow-inner pr-10"
+                                            placeholder="******"
+                                            required
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-primary transition-colors"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">
+                                                {showPassword ? 'visibility' : 'visibility_off'}
+                                            </span>
+                                        </button>
+                                    </div>
                                 </div>
                             </>
                         )}

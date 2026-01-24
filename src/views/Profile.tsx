@@ -17,13 +17,17 @@ const Profile: React.FC<ProfileProps> = ({ onNavigate }) => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [medals, setMedals] = useState<any[]>([]);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     // Form states
     const [form, setForm] = useState({
         nickname: '',
         currentWeight: '',
         goalWeight: '',
-        height: ''
+        height: '',
+        age: '',
+        gender: 'male'
     });
 
     const loadData = async () => {
@@ -40,7 +44,9 @@ const Profile: React.FC<ProfileProps> = ({ onNavigate }) => {
                     nickname: data.nickname || '',
                     currentWeight: data.currentWeight.toString(),
                     goalWeight: data.goalWeight.toString(),
-                    height: (data.height || '').toString()
+                    height: (data.height || '').toString(),
+                    age: (data.age || '40').toString(),
+                    gender: data.gender || 'male'
                 });
             }
             setMedals(mData || []);
@@ -66,7 +72,9 @@ const Profile: React.FC<ProfileProps> = ({ onNavigate }) => {
                 nickname: form.nickname,
                 current_weight: parseFloat(form.currentWeight),
                 goal_weight: parseFloat(form.goalWeight),
-                height: parseFloat(form.height)
+                height: parseFloat(form.height),
+                age: parseInt(form.age),
+                gender: form.gender
             });
 
             window.showToast('Perfil atualizado com sucesso!', 'success');
@@ -254,6 +262,28 @@ const Profile: React.FC<ProfileProps> = ({ onNavigate }) => {
                                         className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] font-bold outline-none focus:border-primary transition-all"
                                     />
                                 </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-1.5 block tracking-widest">Idade</label>
+                                        <input
+                                            type="number"
+                                            value={form.age}
+                                            onChange={e => setForm({ ...form, age: e.target.value })}
+                                            className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] font-bold outline-none focus:border-primary transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-1.5 block tracking-widest">Gênero</label>
+                                        <select
+                                            value={form.gender}
+                                            onChange={e => setForm({ ...form, gender: e.target.value })}
+                                            className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] font-bold outline-none focus:border-primary transition-all appearance-none"
+                                        >
+                                            <option value="male">Masculino</option>
+                                            <option value="female">Feminino</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <button
                                     type="submit"
                                     disabled={saving}
@@ -272,20 +302,42 @@ const Profile: React.FC<ProfileProps> = ({ onNavigate }) => {
                                 <span className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">Alterar Senha</span>
                             </div>
                             <form onSubmit={handleChangePassword} className="space-y-4">
-                                <input
-                                    type="password"
-                                    placeholder="Nova Senha"
-                                    value={newPassword}
-                                    onChange={e => setNewPassword(e.target.value)}
-                                    className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] outline-none focus:border-primary transition-all font-bold placeholder:text-[var(--text-muted)] text-sm"
-                                />
-                                <input
-                                    type="password"
-                                    placeholder="Confirmar Nova Senha"
-                                    value={confirmPassword}
-                                    onChange={e => setConfirmPassword(e.target.value)}
-                                    className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] outline-none focus:border-primary transition-all font-bold placeholder:text-[var(--text-muted)] text-sm"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showNewPassword ? "text" : "password"}
+                                        placeholder="Nova Senha"
+                                        value={newPassword}
+                                        onChange={e => setNewPassword(e.target.value)}
+                                        className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] outline-none focus:border-primary transition-all font-bold placeholder:text-[var(--text-muted)] text-sm pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowNewPassword(!showNewPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-primary transition-colors"
+                                    >
+                                        <span className="material-symbols-outlined text-lg">
+                                            {showNewPassword ? 'visibility' : 'visibility_off'}
+                                        </span>
+                                    </button>
+                                </div>
+                                <div className="relative">
+                                    <input
+                                        type={showConfirmPassword ? "text" : "password"}
+                                        placeholder="Confirmar Nova Senha"
+                                        value={confirmPassword}
+                                        onChange={e => setConfirmPassword(e.target.value)}
+                                        className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] outline-none focus:border-primary transition-all font-bold placeholder:text-[var(--text-muted)] text-sm pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-primary transition-colors"
+                                    >
+                                        <span className="material-symbols-outlined text-lg">
+                                            {showConfirmPassword ? 'visibility' : 'visibility_off'}
+                                        </span>
+                                    </button>
+                                </div>
                                 <button
                                     type="submit"
                                     disabled={saving || !newPassword}

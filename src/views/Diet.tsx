@@ -14,12 +14,15 @@ const Diet: React.FC = () => {
   const [uploadingMeal, setUploadingMeal] = useState(false);
   const mealInputRef = React.useRef<HTMLInputElement>(null);
 
+  const [userStats, setUserStats] = useState<any>(null);
+
   const loadData = () => {
     api.getMeals().then(data => {
       if (data) setMeals(data);
     }).catch(console.error);
 
     api.getShoppingList().then(setShoppingList).catch(console.error);
+    api.getUserStats().then(setUserStats).catch(console.error);
   };
 
   React.useEffect(() => {
@@ -179,7 +182,18 @@ const Diet: React.FC = () => {
     .filter(m => m.consumed)
     .reduce((total, m) => total + (m.calories || 0), 0);
 
-  const dailyGoal = 2200;
+  // Mifflin-St Jeor Equation
+  let dailyGoal = 2200;
+  if (userStats) {
+    const { currentWeight, height, age, gender } = userStats;
+    if (currentWeight && height && age) {
+      let bmr = (10 * currentWeight) + (6.25 * height) - (5 * age);
+      bmr += (gender === 'male' ? 5 : -161);
+      // Activity Factor 1.25 (Lightly active/Driving)
+      dailyGoal = Math.round(bmr * 1.25);
+    }
+  }
+
   const progressPercent = Math.min(100, (caloriesConsumed / dailyGoal) * 100);
 
   return (
@@ -426,6 +440,26 @@ const Diet: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Tamanho da Refeição</label>
+                      <select
+                        className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl p-3.5 outline-none focus:border-primary transition-colors font-bold text-[var(--text-primary)] appearance-none mb-4"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          let est = 0;
+                          if (val === 'leve') est = 350;
+                          if (val === 'media') est = 650;
+                          if (val === 'pesada') est = 900;
+                          if (val === 'rodizio') est = 1500;
+                          if (est > 0) setNewMeal({ ...newMeal, calories: est });
+                        }}
+                      >
+                        <option value="">Selecione para estimar...</option>
+                        <option value="leve">Leve (Salada, Fruta, Lanche Natural)</option>
+                        <option value="media">Média (PF, Marmita Padrão)</option>
+                        <option value="pesada">Pesada (Feijoada, Macarrão, Hambúrguer)</option>
+                        <option value="rodizio">Churrasco / Rodízio</option>
+                      </select>
+
                       <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Calorias (aprox)</label>
                       <input
                         type="number"
