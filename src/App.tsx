@@ -11,6 +11,7 @@ import Diet from './views/Diet';
 import Goals from './views/Goals';
 import Resources from './views/Resources';
 import Ranking from './views/Ranking';
+import Winners from './views/Winners';
 import Profile from './views/Profile';
 import Admin from './views/Admin';
 
@@ -176,6 +177,7 @@ const App: React.FC = () => {
       case View.GOALS: return <Goals />;
       case View.RESOURCES: return <Resources />;
       case View.RANKING: return <Ranking />;
+      case View.WINNERS: return <Winners />;
       case View.PROFILE: return <Profile onNavigate={setActiveView} />;
       case View.ADMIN: return isAdmin ? <Admin /> : <Dashboard onNavigate={setActiveView} />;
       default: return <Dashboard onNavigate={setActiveView} />;
@@ -200,8 +202,14 @@ const App: React.FC = () => {
         <NavButton
           active={activeView === View.RANKING}
           onClick={() => setActiveView(View.RANKING)}
-          icon="group"
+          icon="groups"
           label="Social"
+        />
+        <NavButton
+          active={activeView === View.WINNERS}
+          onClick={() => setActiveView(View.WINNERS)}
+          icon="emoji_events"
+          label="Ranking"
         />
         <NavButton
           active={activeView === View.GOALS}

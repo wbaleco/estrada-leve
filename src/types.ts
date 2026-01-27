@@ -6,6 +6,7 @@ export enum View {
   GOALS = 'goals',
   RESOURCES = 'resources',
   RANKING = 'ranking',
+  WINNERS = 'winners',
   PROFILE = 'profile',
   ADMIN = 'admin'
 }
@@ -25,8 +26,40 @@ export interface UserStats {
   avatarUrl?: string;
   isAdmin?: boolean;
   waistCm?: number;
+  startWaistCm?: number;
+  waistLost?: number;
   age?: number;
   gender?: string;
+  weightLossPercentage?: number;
+  waistReductionPercentage?: number;
+  combinedScore?: number;
+}
+
+export interface MeasurementHistory {
+  id: string;
+  userId: string;
+  weight: number;
+  waistCm?: number;
+  date: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface WinnerRanking {
+  userId: string;
+  nickname: string;
+  avatarUrl?: string;
+  currentWeight: number;
+  startWeight: number;
+  goalWeight: number;
+  weightLost: number;
+  waistCm?: number;
+  startWaistCm?: number;
+  waistLost?: number;
+  points: number;
+  weightLossPercentage: number;
+  waistReductionPercentage: number;
+  combinedScore: number;
 }
 
 export interface Activity {

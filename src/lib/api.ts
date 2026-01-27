@@ -34,10 +34,28 @@ export const api = {
             avatarUrl: data.avatar_url,
             isAdmin: data.is_admin,
             waistCm: data.waist_cm,
+            startWaistCm: data.start_waist_cm,
+            waistLost: data.waist_lost,
             age: data.age,
-            gender: data.gender
+            gender: data.gender,
+            // Calculate percentages on the fly
+            weightLossPercentage: data.start_weight > 0
+                ? parseFloat((((data.start_weight - data.current_weight) / data.start_weight) * 100).toFixed(2))
+                : 0,
+            waistReductionPercentage: data.start_waist_cm > 0 && data.waist_cm
+                ? parseFloat((((data.start_waist_cm - data.waist_cm) / data.start_waist_cm) * 100).toFixed(2))
+                : 0,
+            combinedScore: data.start_weight > 0
+                ? parseFloat((
+                    (((data.start_weight - data.current_weight) / data.start_weight) * 100 * 0.6) +
+                    (data.start_waist_cm > 0 && data.waist_cm
+                        ? (((data.start_waist_cm - data.waist_cm) / data.start_waist_cm) * 100 * 0.4)
+                        : 0)
+                ).toFixed(2))
+                : 0
         };
     },
+
 
     getAllUsers: async () => {
         const { data, error } = await supabase.from('user_stats').select('*').order('created_at', { ascending: false });
@@ -308,9 +326,26 @@ export const api = {
     },
 
     getWeightHistory: async () => {
-        const { data, error } = await supabase.from('goals_weight_history').select('*').order('date', { ascending: true });
+        // Agora busca da nova tabela unificada 'measurement_history'
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) return [];
+
+        const { data, error } = await supabase
+            .from('measurement_history')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('date', { ascending: true });
+
         if (error) throw error;
-        return data;
+
+        // Mapeia para o formato que o gráfico espera
+        return data.map((d: any) => ({
+            id: d.id,
+            weight: d.weight,
+            // Formata a data DD/MM para o gráfico
+            label: new Date(d.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+            date: d.date
+        }));
     },
 
     updateWeight: async (weight: number, waist?: number) => {
@@ -318,13 +353,29 @@ export const api = {
         if (!user) throw new Error('Not authenticated');
 
         // 1. Update user_stats
-        const { data: stats } = await supabase.from('user_stats').select('start_weight').eq('user_id', user.id).single();
+        // 1. Update user_stats
+        const { data: stats } = await supabase.from('user_stats').select('start_weight, start_waist_cm').eq('user_id', user.id).single();
+
         const weightLost = stats ? (stats.start_weight - weight) : 0;
+
+        // Logic for Waist:
+        // If start_waist_cm is null (user never measured before), set it to current waist.
+        // Otherwise keep it as is.
+        let waistUpdates: any = {};
+        if (waist) {
+            waistUpdates.waist_cm = waist;
+            if (!stats?.start_waist_cm) {
+                waistUpdates.start_waist_cm = waist;
+                waistUpdates.waist_lost = 0;
+            } else {
+                waistUpdates.waist_lost = parseFloat((stats.start_waist_cm - waist).toFixed(1));
+            }
+        }
 
         const { error: updateError } = await supabase.from('user_stats').update({
             current_weight: weight,
             weight_lost: parseFloat(weightLost.toFixed(1)),
-            waist_cm: waist
+            ...waistUpdates
         }).eq('user_id', user.id);
 
         if (updateError) throw updateError;
@@ -520,7 +571,7 @@ export const api = {
         await supabase.from('workout_recordings').update({ comments_count: (workout?.comments_count || 0) + 1 }).eq('id', workoutId);
     },
 
-    addSocialPost: async (text: string) => {
+    addSocialPost: async (text: string, imageUrl?: string) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not authenticated');
 
@@ -531,6 +582,7 @@ export const api = {
             name: stats?.nickname || 'Parceiro',
             user_avatar_url: stats?.avatar_url,
             text: text,
+            image_url: imageUrl,
             stats: stats?.current_weight ? `${stats.current_weight}kg` : null,
             time_ago: 'Agora mesmo', // Fallback for UI
             color: 'primary'
@@ -545,6 +597,16 @@ export const api = {
                 await supabase.from('user_stats').update({ points: (currentStats.points || 0) + 10 }).eq('user_id', user.id);
             }
         }
+    },
+
+    deleteSocialPost: async (postId: string) => {
+        const { error } = await supabase.from('social_posts').delete().eq('id', postId);
+        if (error) throw error;
+    },
+
+    updateSocialPost: async (postId: string, text: string) => {
+        const { error } = await supabase.from('social_posts').update({ text }).eq('id', postId);
+        if (error) throw error;
     },
 
     getDailyGoals: async () => {
@@ -779,6 +841,37 @@ export const api = {
         return publicUrl;
     },
 
+    uploadActivityImage: async (file: File) => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) throw new Error('Not authenticated');
+
+        if (file.size > 10 * 1024 * 1024) throw new Error('Imagem muito grande (Max 10MB)');
+
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('activity_images') // Assuming a bucket, or re-use 'workouts'
+            .upload(fileName, file, { upsert: false });
+
+        // If 'activity_images' does not exist, use 'workouts' or 'avatars' or ask user to create it. 
+        // Let's use 'workouts' bucket as it likely exists from previous 'uploadWorkoutVideo'
+        if (uploadError) {
+            // Fallback to 'workouts' bucket if specific bucket fails (or assume we use 'workouts' for all media)
+            const { error: retryError } = await supabase.storage
+                .from('workouts')
+                .upload(fileName, file, { upsert: false });
+
+            if (retryError) throw retryError;
+
+            const { data: { publicUrl } } = supabase.storage.from('workouts').getPublicUrl(fileName);
+            return publicUrl;
+        }
+
+        const { data: { publicUrl } } = supabase.storage.from('activity_images').getPublicUrl(fileName);
+        return publicUrl;
+    },
+
     uploadMealImage: async (file: File) => {
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) throw new Error('Not authenticated');
@@ -937,6 +1030,41 @@ export const api = {
         return data;
     },
 
+    getUserNotifications: async () => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) return [];
+
+        const { data, error } = await supabase
+            .from('user_notifications')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (error) {
+            console.warn('Error fetching user notifications:', error);
+            return [];
+        }
+        return data;
+    },
+
+    markNotificationAsRead: async (notificationId: string) => {
+        await supabase
+            .from('user_notifications')
+            .update({ read: true })
+            .eq('id', notificationId);
+    },
+
+    markAllNotificationsAsRead: async () => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (user) {
+            await supabase
+                .from('user_notifications')
+                .update({ read: true })
+                .eq('user_id', user.id);
+        }
+    },
+
     sendNotification: async (title: string, message: string, type: string = 'info') => {
         const { error } = await supabase.from('app_notifications').insert({
             title,
@@ -950,5 +1078,84 @@ export const api = {
     deleteNotification: async (id: string) => {
         const { error } = await supabase.from('app_notifications').delete().eq('id', id);
         if (error) throw error;
+    },
+
+    // === NEW: Measurement History & Winner System ===
+
+    getMeasurementHistory: async () => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) return [];
+
+        const { data, error } = await supabase
+            .from('measurement_history')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('date', { ascending: true });
+
+        if (error) throw error;
+
+        return data.map((d: any) => ({
+            id: d.id,
+            userId: d.user_id,
+            weight: d.weight,
+            waistCm: d.waist_cm,
+            date: d.date,
+            notes: d.notes,
+            createdAt: d.created_at
+        }));
+    },
+
+    addMeasurement: async (weight: number, waistCm?: number, notes?: string) => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) throw new Error('Not authenticated');
+
+        // Use the RPC function to update measurements and calculate losses
+        const { data, error } = await supabase.rpc('update_user_measurements', {
+            p_weight: weight,
+            p_waist_cm: waistCm
+        });
+
+        if (error) throw error;
+
+        // Optionally add notes to the latest measurement
+        if (notes) {
+            const today = new Date().toISOString().split('T')[0];
+            await supabase
+                .from('measurement_history')
+                .update({ notes })
+                .eq('user_id', user.id)
+                .eq('date', today);
+        }
+
+        await api.checkAndAwardMedals().catch(console.error);
+        return data;
+    },
+
+    getWinnerRankings: async () => {
+        const { data, error } = await supabase
+            .from('winner_rankings')
+            .select('*')
+            .order('combined_score', { ascending: false })
+            .limit(50);
+
+        if (error) throw error;
+
+        return data.map((d: any) => ({
+            userId: d.user_id,
+            nickname: d.nickname,
+            avatarUrl: d.avatar_url,
+            currentWeight: d.current_weight,
+            startWeight: d.start_weight,
+            goalWeight: d.goal_weight,
+            weightLost: d.weight_lost,
+            waistCm: d.waist_cm,
+            startWaistCm: d.start_waist_cm,
+            waistLost: d.waist_lost,
+            points: d.points,
+            weightLossPercentage: d.weight_loss_percentage,
+            waistReductionPercentage: d.waist_reduction_percentage,
+            combinedScore: d.combined_score
+        }));
     }
 };
+

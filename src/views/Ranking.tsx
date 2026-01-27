@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
+import { supabase } from '../lib/supabase';
+import { getLevel } from '../components/LevelProgress';
 
 const Ranking: React.FC = () => {
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
@@ -17,15 +19,29 @@ const Ranking: React.FC = () => {
     const [commentText, setCommentText] = useState('');
     const [sendingComment, setSendingComment] = useState(false);
     const videoInputRef = useRef<HTMLInputElement>(null);
+    const [selectedPostImage, setSelectedPostImage] = useState<File | null>(null);
+
+    const postImageInputRef = useRef<HTMLInputElement>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [editingPostId, setEditingPostId] = useState<string | null>(null);
+    const [editPostText, setEditPostText] = useState('');
+    const [postToDelete, setPostToDelete] = useState<string | null>(null);
+
+    const userMap = React.useMemo(() => {
+        return new Map(allUsers.map(u => [u.id, u]));
+    }, [allUsers]);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            const [au, rw, sp] = await Promise.all([
+            const [au, rw, sp, { data: { user } }] = await Promise.all([
                 api.getAllUsers().catch(e => { console.error('AllUsers error:', e); return []; }),
                 api.getRecentWorkouts().catch(e => { console.error('Workouts error:', e); return []; }),
-                api.getSocialPosts().catch(e => { console.error('Posts error:', e); return []; })
+                api.getSocialPosts().catch(e => { console.error('Posts error:', e); return []; }),
+                supabase.auth.getUser()
             ]);
+
+            if (user) setCurrentUserId(user.id);
 
             // Derive leaderboard from all users to ensure consistency
             const sortedUsers = [...au].sort((a, b) => (b.points || 0) - (a.points || 0));
@@ -39,7 +55,23 @@ const Ranking: React.FC = () => {
             setLeaderboard(lb);
             setAllUsers(au || []);
             setRecentWorkouts(rw || []);
-            setSocialPosts(sp || []);
+
+            // Filter out automatic system posts (Metas, Peso, etc) to keep feed clean like Facebook
+            // unless it's a 'Treino' which is usually interesting, but we have a separate video section.
+            // Let's keep manual posts and maybe some major achievements if desired, but user asked to clean 'Metas'.
+            const cleanPosts = (sp || []).filter((p: any) => {
+                const text = p.text || '';
+                // Block list of automatic phrases
+                if (text.includes('Meta de')) return false;
+                if (text.includes('Acabei de bater um rangaço')) return false;
+                if (text.includes('Atualizei meu peso')) return false;
+                if (text.includes('Peso registrado')) return false;
+                if (text.includes('Medidas registradas')) return false;
+                if (text.includes('Medidas atualizadas')) return false;
+                if (text.includes('Acabei de validar meu treino')) return false; // Treinos have their own section
+                return true;
+            });
+            setSocialPosts(cleanPosts);
         } catch (err) {
             console.error('General load error:', err);
         } finally {
@@ -76,6 +108,20 @@ const Ranking: React.FC = () => {
         }
     };
 
+    const confirmDelete = async () => {
+        if (!postToDelete) return;
+        try {
+            await api.deleteSocialPost(postToDelete);
+            window.showToast('Publicação excluída!', 'success');
+            loadData();
+        } catch (err) {
+            console.error(err);
+            window.showToast('Erro ao excluir', 'error');
+        } finally {
+            setPostToDelete(null);
+        }
+    };
+
     const handleWorkoutLike = async (workoutId: string) => {
         try {
             const liked = await api.toggleWorkoutLike(workoutId);
@@ -91,12 +137,23 @@ const Ranking: React.FC = () => {
 
     const handlePostSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newPostText.trim()) return;
+        if (!newPostText.trim() && !selectedPostImage) return;
 
         setPosting(true);
         try {
-            await api.addSocialPost(newPostText);
+            let imageUrl: string | undefined;
+            if (selectedPostImage) {
+                try {
+                    imageUrl = await api.uploadActivityImage(selectedPostImage);
+                } catch (uploadErr) {
+                    console.error(uploadErr);
+                    window.showToast('Erro ao subir imagem', 'error');
+                }
+            }
+
+            await api.addSocialPost(newPostText, imageUrl);
             setNewPostText('');
+            setSelectedPostImage(null);
             window.showToast('Postado com sucesso!', 'success');
             loadData();
         } catch (err) {
@@ -221,10 +278,41 @@ const Ranking: React.FC = () => {
                             placeholder="O que rolou na estrada hoje?"
                             className="bg-transparent text-[var(--text-primary)] font-medium outline-none placeholder:text-[var(--text-muted)] w-full py-2"
                         />
-                        <div className="flex justify-end">
+
+                        {/* Image Preview for Post */}
+                        {selectedPostImage && (
+                            <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-[var(--card-border)] mb-2 group">
+                                <img src={URL.createObjectURL(selectedPostImage)} className="w-full h-full object-cover" alt="Preview" />
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedPostImage(null)}
+                                    className="absolute top-0 right-0 bg-black/50 text-white p-1 rounded-bl-lg hover:bg-black/70"
+                                >
+                                    <span className="material-symbols-outlined text-xs">close</span>
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-center">
+                            <button
+                                type="button"
+                                onClick={() => postImageInputRef.current?.click()}
+                                className="text-[var(--text-muted)] hover:text-primary transition-colors flex items-center gap-1 text-xs font-bold uppercase tracking-wide"
+                            >
+                                <span className="material-symbols-outlined text-lg">add_a_photo</span>
+                                Foto
+                            </button>
+                            <input
+                                type="file"
+                                ref={postImageInputRef}
+                                onChange={e => e.target.files?.[0] && setSelectedPostImage(e.target.files[0])}
+                                accept="image/*"
+                                className="hidden"
+                            />
+
                             <button
                                 type="submit"
-                                disabled={posting || !newPostText.trim()}
+                                disabled={posting || (!newPostText.trim() && !selectedPostImage)}
                                 className="bg-primary text-black font-black text-xs px-4 py-2 rounded-lg disabled:opacity-50"
                             >
                                 {posting ? 'Postando...' : 'Publicar'}
@@ -237,6 +325,7 @@ const Ranking: React.FC = () => {
             {/* Feed Tabs? No, just list them mixed or separate. Let's put Leaderboard at bottom or dedicated tab. 
                 For now, vertical layout: Feed -> Recent Videos -> Leaderboard */}
 
+            {/* Feed Section - Facebook Style */}
             <div className="flex flex-col gap-6">
 
                 {/* Social Feed */}
@@ -245,24 +334,108 @@ const Ranking: React.FC = () => {
                         <span className="material-symbols-outlined text-primary">forum</span>
                         Resenha da Estrada
                     </h2>
+
+                    {/* Posts List */}
                     <div className="flex flex-col gap-4">
                         {socialPosts.length === 0 && !loading && <p className="text-center text-[var(--text-muted)] italic">Nenhuma resenha ainda. Seja o primeiro!</p>}
+
                         {socialPosts.map(post => (
-                            <div key={post.id} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm">
+                            <div key={post.id} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm animate-in slide-in-from-bottom duration-500 relative group/post">
+                                {/* Edit/Delete Menu for Owner */}
+                                {currentUserId === post.user_id && !editingPostId && (
+                                    <div className="absolute top-4 right-4 flex gap-2">
+                                        <button
+                                            onClick={() => {
+                                                setEditingPostId(post.id);
+                                                setEditPostText(post.text);
+                                            }}
+                                            className="size-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black transition-colors"
+                                            title="Editar"
+                                        >
+                                            <span className="material-symbols-outlined text-xs">edit</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setPostToDelete(post.id)}
+                                            className="size-8 rounded-full bg-red-500/50 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                                            title="Excluir"
+                                        >
+                                            <span className="material-symbols-outlined text-xs">delete</span>
+                                        </button>
+                                    </div>
+                                )}
+
                                 <div className="flex items-center gap-3 mb-3">
                                     <div
                                         className="size-10 rounded-full bg-cover bg-center border border-primary/20"
                                         style={{ backgroundImage: `url('${post.user_avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + post.name}')` }}
                                     />
                                     <div>
-                                        <p className="font-black text-[var(--text-primary)] text-sm uppercase tracking-tight">{post.name}</p>
+                                        <div className="flex items-center gap-1">
+                                            <p className="font-black text-[var(--text-primary)] text-sm uppercase tracking-tight">{post.name}</p>
+                                            {post.user_id && userMap.get(post.user_id)?.points && (
+                                                <span className="text-sm" title={getLevel(userMap.get(post.user_id)?.points || 0).name}>
+                                                    {getLevel(userMap.get(post.user_id)?.points || 0).icon}
+                                                </span>
+                                            )}
+                                        </div>
                                         <p className="text-[10px] text-[var(--text-muted)] font-bold">{post.time_ago || "Hoje"}</p>
                                     </div>
                                 </div>
-                                <p className="text-[var(--text-primary)] text-sm font-medium mb-3 leading-relaxed">
-                                    {post.text}
-                                </p>
-                                {/* Media attachment if any (video links often handled in text or structure) - strictly text for now unless workout */}
+
+                                {editingPostId === post.id ? (
+                                    <div className="mb-3">
+                                        <textarea
+                                            value={editPostText}
+                                            onChange={e => setEditPostText(e.target.value)}
+                                            className="w-full bg-black/20 border border-primary/50 rounded-xl p-3 text-sm text-[var(--text-primary)] outline-none focus:border-primary resize-none"
+                                            rows={3}
+                                            autoFocus
+                                        />
+                                        <div className="flex gap-2 justify-end mt-2">
+                                            <button
+                                                onClick={() => setEditingPostId(null)}
+                                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-[var(--text-secondary)] hover:bg-white/5"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!editPostText.trim()) return;
+                                                    try {
+                                                        await api.updateSocialPost(post.id, editPostText);
+                                                        window.showToast('Publicação atualizada!', 'success');
+                                                        setEditingPostId(null);
+                                                        loadData();
+                                                    } catch (err) {
+                                                        console.error(err);
+                                                        window.showToast('Erro ao atualizar', 'error');
+                                                    }
+                                                }}
+                                                className="bg-primary text-black px-3 py-1.5 rounded-lg text-xs font-bold hover:brightness-110"
+                                            >
+                                                Salvar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="text-[var(--text-primary)] text-sm font-medium mb-3 leading-relaxed">
+                                        {post.text}
+                                    </p>
+                                )}
+
+                                {/* Post Image */}
+                                {post.image_url && (
+                                    <div className="rounded-xl overflow-hidden mb-3 border border-[var(--card-border)] bg-black/50">
+                                        <img src={post.image_url} alt="Post content" className="w-full h-auto max-h-96 object-contain" />
+                                    </div>
+                                )}
+
+                                {/* Stat Badge if post has stats */}
+                                {post.stats && (
+                                    <span className="inline-block bg-primary/10 text-primary text-[10px] font-black px-2 py-1 rounded-md mb-3">
+                                        {post.stats}
+                                    </span>
+                                )}
 
                                 <div className="flex items-center gap-4 border-t border-[var(--card-border)] pt-3">
                                     <button
@@ -285,197 +458,72 @@ const Ranking: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Recent Workouts */}
-                <div>
-                    <h2 className="text-xl font-black mb-4 flex items-center gap-2 text-[var(--text-primary)]">
-                        <span className="material-symbols-outlined text-primary">movie</span>
-                        Treinos Recentes
-                    </h2>
-                    <div className="flex flex-col gap-4">
-                        {recentWorkouts.map((workout, i) => (
-                            <div key={workout.id || i} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl overflow-hidden shadow-lg hover:border-primary/30 transition-all">
-                                <div className="p-4 flex items-center gap-3">
-                                    <div
-                                        className="size-8 rounded-full bg-cover bg-center border border-primary/20 shadow-sm"
-                                        style={{ backgroundImage: `url('${workout.user_stats?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + (workout.user_stats?.nickname || i)}')` }}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-black text-[var(--text-primary)] truncate uppercase tracking-tight">{workout.user_stats?.nickname || 'Parceiro'}</p>
-                                        <p className="text-[10px] text-[var(--text-muted)] font-bold">{new Date(workout.created_at).toLocaleDateString()} • {new Date(workout.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                    </div>
-                                    <div className="bg-primary/10 px-2 py-1 rounded text-[8px] font-black text-primary uppercase">VERIFICADO</div>
-                                </div>
+                {/* Recent Workouts Feed (Videos) */}
+                {recentWorkouts.length > 0 && (
+                    <div className="mt-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-black flex items-center gap-2 text-[var(--text-primary)]">
+                                <span className="material-symbols-outlined text-primary">movie</span>
+                                Cine Rodovia
+                            </h2>
+                            <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest">Treinos da Galera</span>
+                        </div>
 
-                                {workout.caption && (
-                                    <p className="px-4 pb-3 text-xs font-medium text-[var(--text-secondary)] italic">
-                                        "{workout.caption}"
-                                    </p>
-                                )}
-
-                                <div className="relative aspect-video bg-black flex items-center justify-center">
-                                    <video
-                                        src={workout.video_url}
-                                        className="w-full h-full object-contain"
-                                        controls
-                                        playsInline
-                                    />
-                                </div>
-
-                                <div className="p-3 border-t border-[var(--card-border)] flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                        <button
-                                            onClick={() => handleWorkoutLike(workout.id)}
-                                            className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${workout.is_liked ? 'text-red-500' : 'text-[var(--text-muted)] hover:text-red-500'}`}
-                                        >
-                                            <span className={`material-symbols-outlined text-lg ${workout.is_liked ? 'material-symbols-filled' : ''}`}>favorite</span>
-                                            {workout.likes_count > 0 ? workout.likes_count : 'Curtir'}
-                                        </button>
-                                        <button
-                                            onClick={() => openComments(workout, 'workout')}
-                                            className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-muted)] hover:text-primary transition-colors"
-                                        >
-                                            <span className="material-symbols-outlined text-lg">chat_bubble_outline</span>
-                                            {workout.comments_count > 0 ? `${workout.comments_count} Comentários` : 'Comentar'}
-                                        </button>
-                                    </div>
-                                    <div className="bg-primary/10 text-primary text-[10px] font-black px-2 py-1 rounded-full flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-xs">stars</span>
-                                        +200 PTS
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Leaderboard Podium */}
-                <div>
-                    <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-[var(--text-primary)]">
-                        <span className="material-symbols-outlined text-primary">emoji_events</span>
-                        Mestres da Rodovia
-                    </h2>
-
-                    {!loading && leaderboard.length > 0 && (
-                        <div className="flex items-end justify-center gap-2 mb-8 px-2 pt-10">
-                            {/* 2nd Place */}
-                            {leaderboard.length >= 2 && (
-                                <div className="flex flex-col items-center gap-2 flex-1 min-w-0 max-w-[100px] animate-in slide-in-from-bottom duration-700 delay-100">
-                                    <div className="relative group">
-                                        <div className="size-16 rounded-full border-4 border-[#C0C0C0] p-1 bg-[var(--card)] shadow-lg shadow-black/20">
-                                            <div
-                                                className="w-full h-full rounded-full bg-cover bg-center"
-                                                style={{ backgroundImage: `url('${leaderboard[1].avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + leaderboard[1].nickname}')` }}
-                                            />
-                                        </div>
-                                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#C0C0C0] text-black text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">2º</div>
-                                    </div>
-                                    <div className="text-center w-full px-1">
-                                        <p className="text-[10px] font-black text-[var(--text-primary)] uppercase truncate leading-tight">{leaderboard[1].nickname}</p>
-                                        <p className="text-[8px] font-bold text-primary uppercase">{leaderboard[1].points} pts</p>
-                                    </div>
-                                    <div className="w-full h-16 bg-gradient-to-b from-[#C0C0C0]/20 to-transparent rounded-t-xl border-t-2 border-[#C0C0C0]/30 shadow-inner"></div>
-                                </div>
-                            )}
-
-                            {/* 1st Place */}
-                            <div className="flex flex-col items-center gap-2 flex-1 min-w-0 max-w-[120px] -mt-10 animate-in zoom-in duration-1000">
-                                <div className="relative group scale-110">
-                                    <div className="absolute -inset-2 bg-primary/20 rounded-full blur-xl animate-pulse"></div>
-                                    <div className="size-20 rounded-full border-4 border-primary p-1 bg-[var(--card)] shadow-2xl shadow-primary/30 relative z-10">
+                        <div className="flex flex-col gap-6">
+                            {recentWorkouts.map((workout, i) => (
+                                <div key={workout.id || i} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl overflow-hidden shadow-lg hover:border-primary/30 transition-all">
+                                    <div className="p-4 flex items-center gap-3">
                                         <div
-                                            className="w-full h-full rounded-full bg-cover bg-center"
-                                            style={{ backgroundImage: `url('${leaderboard[0].avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + leaderboard[0].nickname}')` }}
+                                            className="size-8 rounded-full bg-cover bg-center border border-primary/20 shadow-sm"
+                                            style={{ backgroundImage: `url('${workout.user_stats?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + (workout.user_stats?.nickname || i)}')` }}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-black text-[var(--text-primary)] truncate uppercase tracking-tight">{workout.user_stats?.nickname || 'Parceiro'}</p>
+                                            <p className="text-[10px] text-[var(--text-muted)] font-bold">{new Date(workout.created_at).toLocaleDateString()} • {new Date(workout.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                        </div>
+                                        <div className="bg-primary/10 px-2 py-1 rounded text-[8px] font-black text-primary uppercase">VERIFICADO</div>
+                                    </div>
+
+                                    {workout.caption && (
+                                        <p className="px-4 pb-3 text-xs font-medium text-[var(--text-secondary)] italic">
+                                            "{workout.caption}"
+                                        </p>
+                                    )}
+
+                                    <div className="relative aspect-video bg-black flex items-center justify-center">
+                                        <video
+                                            src={workout.video_url}
+                                            className="w-full h-full object-contain"
+                                            controls
+                                            playsInline
                                         />
                                     </div>
-                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-4xl animate-bounce">👑</div>
-                                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-primary text-black text-[11px] font-black px-3 py-1 rounded-full shadow-lg z-20">1º</div>
-                                </div>
-                                <div className="text-center mt-2 w-full px-1">
-                                    <p className="text-xs font-black text-[var(--text-primary)] uppercase truncate leading-tight">{leaderboard[0].nickname}</p>
-                                    <p className="text-[9px] font-black text-primary uppercase tracking-widest">{leaderboard[0].points} pts</p>
-                                </div>
-                                <div className="w-full h-24 bg-gradient-to-b from-primary/30 to-transparent rounded-t-2xl border-t-2 border-primary/40 shadow-inner"></div>
-                            </div>
 
-                            {/* 3rd Place */}
-                            {leaderboard.length >= 3 && (
-                                <div className="flex flex-col items-center gap-2 flex-1 min-w-0 max-w-[100px] animate-in slide-in-from-bottom duration-700 delay-200">
-                                    <div className="relative group">
-                                        <div className="size-14 rounded-full border-4 border-[#CD7F32] p-1 bg-[var(--card)] shadow-lg shadow-black/20">
-                                            <div
-                                                className="w-full h-full rounded-full bg-cover bg-center"
-                                                style={{ backgroundImage: `url('${leaderboard[2].avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + leaderboard[2].nickname}')` }}
-                                            />
+                                    <div className="p-3 border-t border-[var(--card-border)] flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <button
+                                                onClick={() => handleWorkoutLike(workout.id)}
+                                                className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${workout.is_liked ? 'text-red-500' : 'text-[var(--text-muted)] hover:text-red-500'}`}
+                                            >
+                                                <span className={`material-symbols-outlined text-lg ${workout.is_liked ? 'material-symbols-filled' : ''}`}>favorite</span>
+                                                {workout.likes_count > 0 ? workout.likes_count : 'Curtir'}
+                                            </button>
+                                            <button
+                                                onClick={() => openComments(workout, 'workout')}
+                                                className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-muted)] hover:text-primary transition-colors"
+                                            >
+                                                <span className="material-symbols-outlined text-lg">chat_bubble_outline</span>
+                                                {workout.comments_count > 0 ? `${workout.comments_count} Comentários` : 'Comentar'}
+                                            </button>
                                         </div>
-                                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#CD7F32] text-black text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">3º</div>
                                     </div>
-                                    <div className="text-center w-full px-1">
-                                        <p className="text-[10px] font-black text-[var(--text-primary)] uppercase truncate leading-tight">{leaderboard[2].nickname}</p>
-                                        <p className="text-[8px] font-bold text-primary uppercase">{leaderboard[2].points} pts</p>
-                                    </div>
-                                    <div className="w-full h-12 bg-gradient-to-b from-[#CD7F32]/20 to-transparent rounded-t-lg border-t-2 border-[#CD7F32]/30 shadow-inner"></div>
                                 </div>
-                            )}
+                            ))}
                         </div>
-                    )}
-
-                    <div className="bg-[var(--card)] rounded-[24px] border border-[var(--card-border)] overflow-hidden mb-12 shadow-xl">
-                        {loading ? (
-                            <div className="p-8 text-center text-[var(--text-muted)] font-bold italic">Carregando estrelas da estrada...</div>
-                        ) : (
-                            leaderboard.slice(3).map((user, index) => (
-                                <div key={index} className="flex items-center gap-4 p-4 border-b border-[var(--card-border)] last:border-0 transition-colors hover:bg-primary/5">
-                                    <div className="w-8 flex justify-center text-xs font-black text-[var(--text-muted)]">
-                                        #{index + 4}
-                                    </div>
-                                    <div
-                                        className="size-9 rounded-full bg-cover bg-center border border-primary/10 shrink-0"
-                                        style={{ backgroundImage: `url('${user.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + user.nickname}')` }}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-black text-[var(--text-primary)] text-sm truncate uppercase tracking-tight">{user.nickname || 'Parceiro'}</p>
-                                        <p className="text-[9px] text-primary font-black uppercase tracking-widest">{user.points} Pontos</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[10px] font-bold text-[var(--text-muted)] italic">{user.current_weight}kg</p>
-                                    </div>
-                                </div>
-                            ))
-                        )}
                     </div>
-                </div>
-
-                {/* Fleet / All Users */}
-                <div id="frota-completa">
-                    <h2 className="text-xl font-black mb-4 flex items-center gap-2 text-[var(--text-primary)]">
-                        <span className="material-symbols-outlined text-primary">local_shipping</span>
-                        Frota Completa
-                    </h2>
-                    <p className="text-[var(--text-secondary)] text-xs mb-4 font-medium uppercase tracking-widest">Todos os parceiros cadastrados na rodovia</p>
-
-                    <div className="grid grid-cols-1 gap-3">
-                        {allUsers.length === 0 && !loading && <p className="text-center text-[var(--text-muted)] italic">Nenhum parceiro encontrado.</p>}
-                        {allUsers.map((u, i) => (
-                            <div key={i} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:border-primary/30 transition-all">
-                                <div
-                                    className="size-12 rounded-full bg-cover bg-center border-2 border-primary/30"
-                                    style={{ backgroundImage: `url('${u.avatarUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + u.nickname}')` }}
-                                />
-                                <div className="flex-1">
-                                    <h4 className="font-black text-[var(--text-primary)] uppercase tracking-tight">{u.nickname}</h4>
-                                    <div className="flex gap-3 mt-1">
-                                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Peso: {u.currentWeight}kg</span>
-                                        <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{u.points} pts</span>
-                                    </div>
-                                </div>
-                                <div className="size-8 bg-black/5 dark:bg-white/5 rounded-full flex items-center justify-center">
-                                    <span className="material-symbols-outlined text-sm text-[var(--text-muted)]">chevron_right</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+                )}
             </div>
+
 
             {/* Comments Modal */}
             {activePostComments && (
@@ -540,6 +588,36 @@ const Ranking: React.FC = () => {
                                 <span className="material-symbols-outlined font-black text-lg">send</span>
                             </button>
                         </form>
+                    </div>
+                </div>
+            )}
+            {/* Delete Confirmation Modal */}
+            {postToDelete && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-[var(--card)] w-full max-w-sm rounded-[24px] border border-[var(--card-border)] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6 text-center">
+                            <div className="size-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4 text-red-500">
+                                <span className="material-symbols-outlined text-3xl">delete</span>
+                            </div>
+                            <h3 className="text-lg font-black text-[var(--text-primary)] mb-2">Excluir Publicação?</h3>
+                            <p className="text-sm text-[var(--text-secondary)] mb-6">
+                                Essa ação não pode ser desfeita. Tem certeza que deseja remover este post?
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setPostToDelete(null)}
+                                    className="flex-1 py-3 rounded-xl font-bold text-[var(--text-primary)] hover:bg-white/5 transition-colors border border-[var(--card-border)]"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    className="flex-1 py-3 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                                >
+                                    Sim, Excluir
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

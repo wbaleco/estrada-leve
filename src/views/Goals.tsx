@@ -3,7 +3,7 @@ import React from 'react';
 import { Tooltip, ResponsiveContainer, AreaChart, Area, XAxis, YAxis } from 'recharts';
 
 import { api } from '../lib/api';
-import { UserStats } from '../types';
+import { UserStats, MeasurementHistory } from '../types';
 
 const Goals: React.FC = () => {
   const [history, setHistory] = React.useState<any[]>([]);
@@ -13,10 +13,13 @@ const Goals: React.FC = () => {
   const [newWeight, setNewWeight] = React.useState('');
   const [newWaist, setNewWaist] = React.useState('');
   const [postText, setPostText] = React.useState('');
+  const [measurementHistory, setMeasurementHistory] = React.useState<MeasurementHistory[]>([]);
+  const [showHistory, setShowHistory] = React.useState(false);
   const [isPosting, setIsPosting] = React.useState(false);
 
   const loadData = () => {
     api.getWeightHistory().then(setHistory).catch(console.error);
+    api.getMeasurementHistory().then(setMeasurementHistory).catch(console.error);
     api.getSocialPosts().then(setPosts).catch(console.error);
     api.getUserStats().then(setStats).catch(console.error);
   };
@@ -30,21 +33,27 @@ const Goals: React.FC = () => {
     if (!newWeight) return;
 
     try {
-      const pointsAwarded = await api.updateWeight(parseFloat(newWeight), newWaist ? parseFloat(newWaist) : undefined);
+      const result = await api.addMeasurement(
+        parseFloat(newWeight),
+        newWaist ? parseFloat(newWaist) : undefined
+      );
+
       setShowWeightModal(false);
       setNewWeight('');
       setNewWaist('');
       loadData();
-      if (pointsAwarded) {
-        window.showToast('Registros salvos! +20 pontos na conta! 🏆', 'success');
+
+      if (result?.points_awarded && result.points_awarded > 0) {
+        window.showToast(`Medidas registradas! +${result.points_awarded} pontos! 🏆`, 'success');
       } else {
-        window.showToast('Registros atualizados com sucesso!', 'success');
+        window.showToast('Medidas atualizadas com sucesso!', 'success');
       }
     } catch (err) {
       console.error(err);
-      window.showToast('Erro ao registrar peso', 'error');
+      window.showToast('Erro ao registrar medidas', 'error');
     }
   };
+
 
   const handleSendPost = async () => {
     if (!postText.trim()) return;
@@ -107,8 +116,15 @@ const Goals: React.FC = () => {
         <div className="flex justify-between items-center mb-4 text-[var(--text-primary)]">
           <h3 className="font-bold">Evolução de Peso</h3>
           <div className="flex bg-gray-100 dark:bg-background-dark rounded-full p-1">
-            <button className="px-3 py-1 text-[10px] font-bold bg-primary text-black rounded-full shadow-sm">Mês</button>
-            <button className="px-3 py-1 text-[10px] font-bold text-[var(--text-secondary)]">Ano</button>
+            {/* Forecasting Logic/Badge */}
+            {history.length >= 2 && stats?.goalWeight && (
+              <div className="flex items-center gap-2 px-2">
+                <span className="material-symbols-outlined text-[10px] text-primary">trending_down</span>
+                <span className="text-[10px] font-bold text-primary">
+                  Média: {(((history[0].weight - history[history.length - 1].weight) / Math.max(1, (new Date(history[history.length - 1].date).getTime() - new Date(history[0].date).getTime()) / (1000 * 60 * 60 * 24))).toFixed(2))} kg/dia
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="h-48 w-full">
@@ -134,57 +150,105 @@ const Goals: React.FC = () => {
         </div>
       </div>
 
-      {/* Social Feed */}
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="font-bold">Amigos na Estrada</h3>
-        <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">Apoio Mútuo</span>
-      </div>
-
-      <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 mb-6 shadow-xl">
-        <div className="flex gap-3">
-          <div
-            className="size-10 rounded-full bg-cover bg-center border-2 border-primary shrink-0"
-            style={{ backgroundImage: `url('${stats?.avatarUrl || "https://lh3.googleusercontent.com/..."}')` }}
-          />
-          <div className="flex-1 flex flex-col gap-2">
-            <textarea
-              value={postText}
-              onChange={(e) => setPostText(e.target.value)}
-              placeholder="Como está o foco hoje, parceiro?"
-              className="bg-gray-50 dark:bg-white/5 border border-[var(--card-border)] rounded-xl p-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-primary transition-all resize-none min-h-[80px]"
-            />
-            <div className="flex justify-end">
-              <button
-                onClick={handleSendPost}
-                disabled={!postText.trim() || isPosting}
-                className="bg-primary text-background-dark font-bold text-xs px-4 py-2 rounded-lg disabled:opacity-50 active:scale-95 transition-all flex items-center gap-2"
-              >
-                {isPosting ? 'Enviando...' : 'Postar'}
-                <span className="material-symbols-outlined text-sm">send</span>
-              </button>
-            </div>
+      {/* Smart Prediction Card */}
+      {stats?.goalWeight && history.length >= 2 && stats.currentWeight > stats.goalWeight && (
+        <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-5 mb-6 shadow-xl relative overflow-hidden text-white border border-blue-400/30">
+          <div className="absolute right-0 top-0 p-4 opacity-10">
+            <span className="material-symbols-outlined text-8xl">calendar_month</span>
           </div>
+
+          {(() => {
+            // Logic to calculate prediction
+            const first = history[0]; // Earliest date usually if sorted by date ascending? adjust based on sort
+            // history from getWeightHistory usually is sorted by date ascending for chart?
+            // Let's assume history is sorted date ascending: history[0] is oldest.
+            // Actually logic above assumed history[0] is oldest.
+            // Let's verify sort. api.getWeightHistory likely returns sorted.
+
+            const oldest = history[0];
+            const newest = history[history.length - 1];
+            const daysDiff = (new Date().getTime() - new Date(oldest.date).getTime()) / (1000 * 3600 * 24);
+            const weightDiff = oldest.weight - newest.weight;
+
+            if (daysDiff < 1 || weightDiff <= 0) return (
+              <div>
+                <h3 className="font-black uppercase tracking-tight text-lg mb-1">Previsão em cálculo...</h3>
+                <p className="text-xs opacity-80">Continue registrando seu peso para vermos a tendência!</p>
+              </div>
+            );
+
+            const ratePerDay = weightDiff / daysDiff;
+            const remaining = newest.weight - stats.goalWeight;
+            const daysToGoal = remaining / ratePerDay;
+            const goalDate = new Date();
+            goalDate.setDate(goalDate.getDate() + daysToGoal);
+
+            return (
+              <div className="relative z-10 flex flex-col gap-2">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-70 mb-1">Previsão Inteligente</p>
+                  <h3 className="text-2xl font-black leading-tight">
+                    Nesse ritmo, você chega lá em <br />
+                    <span className="text-yellow-300">{goalDate.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}</span>! 🎯
+                  </h3>
+                </div>
+                <div className="bg-white/10 p-3 rounded-lg backdrop-blur-sm mt-1 border border-white/10">
+                  <div className="flex justify-between items-center text-xs font-bold">
+                    <span>Ritmo Atual:</span>
+                    <span className="text-green-300">-{(ratePerDay * 7).toFixed(2)} kg/semana</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
+      )}
+
+      {/* Measurement History Section */}
+      <div className="mb-6">
+        <button
+          onClick={() => setShowHistory(!showHistory)}
+          className="w-full bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm flex items-center justify-between hover:border-primary/30 transition-all"
+        >
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-primary">history</span>
+            <h3 className="font-black text-[var(--text-primary)] uppercase tracking-tight">Meu Histórico de Medidas</h3>
+          </div>
+          <span className={`material-symbols-outlined text-[var(--text-muted)] transition-transform ${showHistory ? 'rotate-180' : ''}`}>
+            expand_more
+          </span>
+        </button>
+
+        {showHistory && (
+          <div className="mt-4 bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm animate-in slide-in-from-top-2 duration-300">
+            {measurementHistory.length === 0 ? (
+              <p className="text-center text-[var(--text-muted)] italic py-4">Nenhuma medida registrada ainda.</p>
+            ) : (
+              <div className="space-y-3">
+                {measurementHistory.map((measurement) => (
+                  <div key={measurement.id} className="flex items-center justify-between p-3 bg-[var(--background)] rounded-xl border border-[var(--card-border)]">
+                    <div>
+                      <p className="text-sm font-bold text-[var(--text-primary)]">
+                        {new Date(measurement.date).toLocaleDateString('pt-BR')}
+                      </p>
+                      {measurement.notes && (
+                        <p className="text-xs text-[var(--text-muted)] italic mt-1">{measurement.notes}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-primary">{measurement.weight}kg</p>
+                      {measurement.waistCm && (
+                        <p className="text-xs text-[var(--text-secondary)]">{measurement.waistCm}cm barriga</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-col gap-4 pb-8">
-        {posts.map((post) => (
-          <SocialPost
-            key={post.id}
-            id={post.id}
-            name={post.name}
-            text={post.text}
-            time={post.time_ago}
-            color={post.color}
-            stats={post.stats}
-            avatarUrl={post.user_avatar_url}
-            likes_count={post.likes_count}
-            comments_count={post.comments_count}
-            is_liked={post.is_liked}
-            onRefresh={loadData}
-          />
-        ))}
-      </div>
 
       <div className="fixed bottom-24 left-0 right-0 z-30 pointer-events-none px-4 flex justify-center">
         <button

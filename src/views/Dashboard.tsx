@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, UserStats } from '../types';
 import { api } from '../lib/api';
+import { LevelProgress } from '../components/LevelProgress';
 
 interface DashboardProps {
   onNavigate: (view: View) => void;
@@ -11,6 +12,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [goals, setGoals] = useState<any[]>([]);
   const [notification, setNotification] = useState<any | null>(null);
+  const [userNotifications, setUserNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const loadData = () => {
     api.getUserStats().then(setStats).catch(console.error);
@@ -18,11 +21,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     api.getNotifications().then(list => {
       if (list && list.length > 0) setNotification(list[0]);
     }).catch(console.error);
+    api.getUserNotifications().then(setUserNotifications).catch(console.error);
     api.checkAndAwardMedals().catch(console.error);
   };
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 30000); // Poll every 30s
+    return () => clearInterval(interval);
   }, []);
 
   const handleAddGoal = async (id: string, type: string) => {
@@ -38,10 +44,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     }
   };
 
+  const unreadCount = userNotifications.filter(n => !n.read).length;
+
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col min-h-screen pb-24">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 sticky top-0 z-10 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-sm border-b border-gray-200 dark:border-white/5">
+      <div className="flex items-center justify-between p-4 sticky top-0 z-20 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-sm border-b border-gray-200 dark:border-white/5">
         <div className="flex items-center gap-3">
           <div className="relative group cursor-pointer" onClick={() => onNavigate(View.PROFILE)}>
             <div
@@ -56,6 +64,59 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Notification Bell */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowNotifications(!showNotifications);
+                if (!showNotifications && unreadCount > 0) {
+                  api.markAllNotificationsAsRead().then(() => {
+                    setUserNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                  });
+                }
+              }}
+              className="flex items-center justify-center size-10 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors relative"
+            >
+              <span className={`material-symbols-outlined ${unreadCount > 0 ? 'text-primary animate-pulse' : 'text-[#adcb90]'}`}>notifications</span>
+              {unreadCount > 0 && (
+                <span className="absolute top-2 right-2 size-2 bg-red-500 rounded-full border border-background-dark"></span>
+              )}
+            </button>
+
+            {/* Notification Dropdown */}
+            {showNotifications && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)}></div>
+                <div className="fixed right-4 top-16 w-[90vw] max-w-[320px] bg-[var(--card)] border border-[var(--card-border)] rounded-2xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 duration-200 origin-top-right">
+                  <div className="p-3 border-b border-[var(--card-border)] bg-black/5 flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-widest text-[var(--text-muted)]">Notificações</span>
+                    {userNotifications.length > 0 && (
+                      <button className="text-[10px] text-primary font-bold hover:underline" onClick={() => setShowNotifications(false)}>Fechar</button>
+                    )}
+                  </div>
+                  <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+                    {userNotifications.length === 0 ? (
+                      <div className="p-6 text-center text-[var(--text-muted)] text-xs italic">
+                        Nenhuma novidade por enquanto.
+                      </div>
+                    ) : (
+                      userNotifications.map((n) => (
+                        <div key={n.id} className={`p-3 border-b border-[var(--card-border)] hover:bg-white/5 transition-colors flex gap-3 ${!n.read ? 'bg-primary/5' : ''}`}>
+                          <div className={`mt-1 size-2 rounded-full shrink-0 ${!n.read ? 'bg-primary' : 'bg-transparent'}`}></div>
+                          <div>
+                            <p className="text-xs font-black text-[var(--text-primary)] mb-0.5">{n.title}</p>
+                            <p className="text-[10px] text-[var(--text-secondary)] leading-snug">{n.message}</p>
+                            <span className="text-[9px] text-[var(--text-muted)] font-bold mt-1 block">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           {stats?.isAdmin && (
             <button
               onClick={() => onNavigate(View.ADMIN)}
@@ -97,12 +158,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       {notification && (
         <div className="px-4 mb-2 animate-in slide-in-from-top duration-700">
           <div className={`p-4 rounded-2xl border-2 flex items-start gap-4 shadow-lg ${notification.type === 'urgent' ? 'bg-red-500/10 border-red-500/30' :
-              notification.type === 'success' ? 'bg-green-500/10 border-green-500/30' :
-                'bg-primary/10 border-primary/30'
+            notification.type === 'success' ? 'bg-green-500/10 border-green-500/30' :
+              'bg-primary/10 border-primary/30'
             }`}>
             <span className={`material-symbols-outlined mt-0.5 ${notification.type === 'urgent' ? 'text-red-500' :
-                notification.type === 'success' ? 'text-green-500' :
-                  'text-primary'
+              notification.type === 'success' ? 'text-green-500' :
+                'text-primary'
               }`}>
               {notification.icon || 'campaign'}
             </span>
@@ -123,6 +184,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <StatCard icon="monitor_weight" label="Perdidos" value={stats?.weightLost.toString() || "-"} unit="kg" />
         <StatCard icon="stars" label="Pontos" value={stats?.points.toString() || "-"} />
       </div>
+
+      {/* Level System Progress */}
+      {stats && (
+        <div className="px-4 mb-6">
+          <LevelProgress points={stats.points || 0} />
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-3 px-4 mb-8">
