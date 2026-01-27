@@ -493,9 +493,6 @@ export const api = {
                 .eq('user_id', user.id);
             if (delError) throw delError;
 
-            // Update count
-            const { data: post } = await supabase.from('social_posts').select('likes_count').eq('id', postId).single();
-            await supabase.from('social_posts').update({ likes_count: Math.max(0, (post?.likes_count || 0) - 1) }).eq('id', postId);
             return false;
         } else {
             // Like
@@ -504,9 +501,6 @@ export const api = {
                 .insert({ post_id: postId, user_id: user.id });
             if (insError) throw insError;
 
-            // Update count
-            const { data: post } = await supabase.from('social_posts').select('likes_count').eq('id', postId).single();
-            await supabase.from('social_posts').update({ likes_count: (post?.likes_count || 0) + 1 }).eq('id', postId);
             return true;
         }
     },
@@ -535,10 +529,6 @@ export const api = {
             text: text
         });
         if (error) throw error;
-
-        // Update count
-        const { data: post } = await supabase.from('social_posts').select('comments_count').eq('id', postId).single();
-        await supabase.from('social_posts').update({ comments_count: (post?.comments_count || 0) + 1 }).eq('id', postId);
     },
 
     getWorkoutComments: async (workoutId: string) => {
@@ -565,10 +555,6 @@ export const api = {
             text: text
         });
         if (error) throw error;
-
-        // Update count
-        const { data: workout } = await supabase.from('workout_recordings').select('comments_count').eq('id', workoutId).single();
-        await supabase.from('workout_recordings').update({ comments_count: (workout?.comments_count || 0) + 1 }).eq('id', workoutId);
     },
 
     addSocialPost: async (text: string, imageUrl?: string) => {
@@ -950,13 +936,9 @@ export const api = {
 
         if (existing) {
             await supabase.from('workout_likes').delete().eq('id', existing.id);
-            const { data: w } = await supabase.from('workout_recordings').select('likes_count').eq('id', workoutId).single();
-            await supabase.from('workout_recordings').update({ likes_count: Math.max(0, (w?.likes_count || 0) - 1) }).eq('id', workoutId);
             return false;
         } else {
             await supabase.from('workout_likes').insert({ workout_id: workoutId, user_id: user.id });
-            const { data: w } = await supabase.from('workout_recordings').select('likes_count').eq('id', workoutId).single();
-            await supabase.from('workout_recordings').update({ likes_count: (w?.likes_count || 0) + 1 }).eq('id', workoutId);
             return true;
         }
     },

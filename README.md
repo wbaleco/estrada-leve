@@ -25,12 +25,14 @@ Um sistema gamificado completo para ajudar motoristas de caminhão a perderem pe
 O **Estrada Leve** é uma plataforma web desenvolvida para criar desafios de emagrecimento entre caminhoneiros, transformando a jornada de perda de peso em uma experiência social, competitiva e motivadora.
 
 ### Principais Diferenciais:
-- 🏆 **Sistema de Pontos e Ranking** - Gamificação completa
+- 🏆 **Sistema de Pontos e Ranking** - Gamificação completa com sistema de medalhas
+- ⚖️ **Algoritmo de Avaliação Justa** - Pontuação combinada: Peso (60%) + Cintura (40%)
 - 📊 **Cálculo Científico de TMB** - Fórmula Mifflin-St Jeor personalizada
-- 🍽️ **Diário Alimentar Inteligente** - Estimativa automática de calorias
-- 💪 **Treinos Validados por Vídeo** - Registro de exercícios com prova
-- 📈 **Gráficos de Evolução** - Acompanhamento visual do progresso
-- 👥 **Rede Social Integrada** - Mural de conquistas e apoio mútuo
+- � **Metas Diárias** - Acompanhamento de Hidratação, Sono e Movimento
+- �🍽️ **Diário Alimentar Inteligente** - Estimativa automática de calorias
+- 💪 **Treinos Validados por Vídeo** - Registro de exercícios com prova em vídeo
+- 📈 **Gráficos de Evolução** - Acompanhamento detalhado de peso e medidas
+- 👥 **Rede Social Automatizada** - Postagens automáticas de conquistas e interação (curtidas/comentários)
 
 ---
 
@@ -38,6 +40,7 @@ O **Estrada Leve** é uma plataforma web desenvolvida para criar desafios de ema
 
 ### 🏠 Dashboard
 - Visão geral do desafio (dias restantes, pontos, peso perdido)
+- **Metas Diárias**: Hidratação 💧, Movimento 🚶 e Sono 😴
 - Acesso rápido a todas as funcionalidades
 - Alertas e notificações importantes
 
@@ -49,10 +52,11 @@ O **Estrada Leve** é uma plataforma web desenvolvida para criar desafios de ema
 - Histórico completo de refeições
 
 ### 🎯 Metas e Evolução
-- Registro de peso e medidas
-- Gráfico de evolução temporal
-- Mural social com posts automáticos
-- Sistema de curtidas e comentários
+- Registro de peso e circunferência abdominal (cintura)
+- Algoritmo de Pontuação Combinada (60% Peso / 40% Cintura)
+- Gráfico de evolução temporal comparativo
+- Mural social com posts automáticos de conquistas
+- Sistema de curtidas e comentários em atividades e refeições
 
 ### 💪 Treinos
 - Catálogo de exercícios (Cardio, Força, Flexibilidade)
@@ -85,6 +89,7 @@ O **Estrada Leve** é uma plataforma web desenvolvida para criar desafios de ema
 ### Frontend
 - **React** + **TypeScript** - Framework principal
 - **Vite** - Build tool
+- **Vite PWA** - Instalação como aplicativo nativo (Mobile/Desktop)
 - **Recharts** - Gráficos de evolução
 - **Tailwind CSS** - Estilização (via variáveis CSS customizadas)
 
