@@ -599,8 +599,10 @@ export const api = {
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) return [];
 
-        // Check if goals exist for today, if not create them
-        const today = new Date().toISOString().split('T')[0];
+        // Check if goals exist for today (Local Time), if not create them
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
         const { data: existing } = await supabase
             .from('daily_goals')
             .select('*')
@@ -637,7 +639,8 @@ export const api = {
             return;
         }
 
-        const newCurrent = Math.min(goal.target, goal.current + (current || 0));
+        // Allow exceeding target (removed Math.min)
+        const newCurrent = goal.current + (current || 0);
         const completed = newCurrent >= goal.target;
 
         const { error: updateErr } = await supabase

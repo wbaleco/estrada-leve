@@ -287,10 +287,9 @@ const GoalRow: React.FC<{ icon: string; label: string; current: string; target: 
     </div>
     <button
       onClick={onAdd}
-      disabled={completed}
       className={`size-8 rounded-full flex items-center justify-center transition-all transform active:scale-90 ${completed ? 'bg-primary text-background-dark shadow-lg' : 'bg-primary/20 hover:bg-primary text-primary hover:text-background-dark border border-primary/20'}`}
     >
-      <span className="material-symbols-outlined text-xl">{completed ? 'check_circle' : 'add'}</span>
+      <span className="material-symbols-outlined text-xl">add</span>
     </button>
   </div>
 );
