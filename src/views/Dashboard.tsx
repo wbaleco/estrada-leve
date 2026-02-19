@@ -221,7 +221,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       </div>
 
       <div className="px-4 mb-2 flex items-center justify-between">
-        <h3 className="text-lg font-black text-[var(--text-primary)] leading-tight uppercase tracking-wider text-xs">Objetivos de Hoje</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-black text-[var(--text-primary)] leading-tight uppercase tracking-wider text-xs">Objetivos de Hoje</h3>
+          {/* Debug/Fix Button for Timezone Issue */}
+          <button
+            onClick={async () => {
+              const confirmed = await window.showConfirm('Tem certeza que deseja resetar os objetivos de hoje? Isso apagará o progresso atual.');
+              if (confirmed) {
+                try {
+                  await api.resetDailyGoals();
+                  loadData();
+                  window.showToast('Objetivos resetados!', 'success');
+                } catch (e) {
+                  window.showToast('Erro ao resetar', 'error');
+                }
+              }
+            }}
+            className="text-[10px] text-red-400 font-bold hover:text-red-600 hover:underline cursor-pointer ml-2"
+            title="Clique aqui se seus objetivos não resetaram hoje"
+          >
+            Resetar Hoje
+          </button>
+        </div>
         <button className="text-primary text-xs font-black hover:underline uppercase tracking-widest">Ver todos</button>
       </div>
       <div className="px-4 flex flex-col gap-3">
