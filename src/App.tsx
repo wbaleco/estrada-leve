@@ -18,6 +18,7 @@ import Admin from './views/Admin';
 declare global {
   interface Window {
     showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+    showConfirm: (message: string) => Promise<boolean>;
     toggleTheme: () => void;
   }
 }
@@ -38,12 +39,19 @@ const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [confirmState, setConfirmState] = useState<{ message: string; resolve: (value: boolean) => void } | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
     window.showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
       setToast({ message, type });
       setTimeout(() => setToast(null), 3000);
+    };
+
+    window.showConfirm = (message: string) => {
+      return new Promise((resolve) => {
+        setConfirmState({ message, resolve });
+      });
     };
 
     // Splash Timer
@@ -235,6 +243,40 @@ const App: React.FC = () => {
       {!isOnline && (
         <div className="fixed top-0 left-0 right-0 bg-orange-500 text-white text-[10px] font-black text-center py-1 z-[101] uppercase tracking-widest animate-pulse">
           Sinal Fraco - Modo Offline Ativado 📡
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {confirmState && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-[#1a1a1a] dark:bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl scale-100 animate-in zoom-in-95 duration-200 relative overflow-hidden">
+            {/* Background Glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -z-10"></div>
+
+            <h3 className="text-lg font-black text-white mb-2 tracking-tight">Confirmação</h3>
+            <p className="text-gray-300 mb-6 text-sm leading-relaxed">{confirmState.message}</p>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  confirmState.resolve(false);
+                  setConfirmState(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  confirmState.resolve(true);
+                  setConfirmState(null);
+                }}
+                className="px-6 py-2 rounded-xl bg-[#adcb90] text-[#151c0d] text-xs font-black shadow-lg shadow-[#adcb90]/20 hover:brightness-110 transition-all active:scale-95"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

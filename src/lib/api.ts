@@ -691,6 +691,28 @@ export const api = {
         await api.checkAndAwardMedals().catch(console.error);
     },
 
+    resetDailyGoals: async () => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) return;
+
+        // Use local date to target the correct "today"
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        console.log('Resetting goals for:', today);
+
+        const { error } = await supabase
+            .from('daily_goals')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('date', today);
+
+        if (error) {
+            console.error('Error resetting daily goals:', error);
+            throw error;
+        }
+    },
+
     getResources: async (category?: string) => {
         let query = supabase.from('resources').select('*').order('created_at', { ascending: false });
         if (category && category !== 'Tudo') {

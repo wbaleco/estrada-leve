@@ -220,7 +220,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </button>
       </div>
 
-      {/* Daily Goals */}
       <div className="px-4 mb-2 flex items-center justify-between">
         <h3 className="text-lg font-black text-[var(--text-primary)] leading-tight uppercase tracking-wider text-xs">Objetivos de Hoje</h3>
         <button className="text-primary text-xs font-black hover:underline uppercase tracking-widest">Ver todos</button>
