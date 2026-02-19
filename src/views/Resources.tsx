@@ -1,7 +1,6 @@
-
-import React, { useState } from 'react';
-
+import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
+import { supabase } from '../lib/supabase';
 
 const Resources: React.FC = () => {
   const [activeCat, setActiveCat] = useState('Tudo');
@@ -20,12 +19,19 @@ const Resources: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [viewingArticle, setViewingArticle] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [editingResource, setEditingResource] = useState<any | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [resourceToDelete, setResourceToDelete] = useState<string | null>(null);
 
   const loadResources = () => {
     api.getResources(activeCat).then(setResources).catch(console.error);
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUserId(user.id);
+    });
     loadResources();
   }, [activeCat]);
 
@@ -68,6 +74,58 @@ const Resources: React.FC = () => {
     }
   };
 
+  const handleUpdateResource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingResource) return;
+    setLoading(true);
+
+    const updates = {
+      title: editingResource.title,
+      description: editingResource.description,
+      image: editingResource.image,
+      category: editingResource.category,
+      url: editingResource.url,
+      content: editingResource.content
+    };
+
+    try {
+      await api.updateResource(editingResource.id, updates);
+      window.showToast('Recurso atualizado!', 'success');
+      setShowEditModal(false);
+
+      // Optimistically update the UI
+      setResources(prev => {
+        // If a filter is active and the category changed to something else, remove it
+        if (activeCat !== 'Tudo' && updates.category !== activeCat) {
+          return prev.filter(r => r.id !== editingResource.id);
+        }
+        // Otherwise update the item in place
+        return prev.map(r => r.id === editingResource.id ? { ...r, ...updates } : r);
+      });
+
+      setEditingResource(null);
+      // Removed loadResources() to prevent overwriting optimistic update with potentially stale data from server
+    } catch (err) {
+      console.error(err);
+      window.showToast('Erro ao atualizar', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteResource = async () => {
+    if (!resourceToDelete) return;
+    try {
+      await api.deleteResource(resourceToDelete);
+      window.showToast('Recurso excluído!', 'success');
+      setResourceToDelete(null);
+      loadResources();
+    } catch (err) {
+      console.error(err);
+      window.showToast('Erro ao excluir', 'error');
+    }
+  };
+
   return (
     <div className="flex flex-col animate-in slide-in-from-bottom duration-500 pb-20">
       <div className="p-4 bg-[var(--background)]/95 backdrop-blur-sm sticky top-0 z-20 border-b border-[var(--card-border)]">
@@ -101,7 +159,26 @@ const Resources: React.FC = () => {
         </h3>
         <div className="flex flex-col gap-6 mb-8">
           {resources.filter(r => r.type === 'article').map(r => (
-            <div key={r.id} className="bg-[var(--card)] rounded-2xl shadow-sm overflow-hidden border border-[var(--card-border)] group transition-all duration-300 hover:shadow-xl hover:border-primary/20">
+            <div key={r.id} className="bg-[var(--card)] rounded-2xl shadow-sm overflow-hidden border border-[var(--card-border)] group transition-all duration-300 hover:shadow-xl hover:border-primary/20 relative">
+
+              {/* Owner Controls */}
+              {currentUserId === r.user_id && (
+                <div className="absolute top-2 right-2 z-10 flex gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingResource(r); setShowEditModal(true); }}
+                    className="size-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-xs">edit</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setResourceToDelete(r.id); }}
+                    className="size-8 rounded-full bg-red-500/50 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-xs">delete</span>
+                  </button>
+                </div>
+              )}
+
               <div
                 className="h-40 bg-cover bg-center transition-transform group-hover:scale-105 duration-500"
                 style={{ backgroundImage: `url('${r.image || "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=200&fit=crop"}')` }}
@@ -140,10 +217,10 @@ const Resources: React.FC = () => {
           {resources.filter(r => r.type === 'video').map(r => (
             <ResourceCard
               key={r.id}
-              title={r.title}
-              desc={r.description}
-              img={r.image}
-              url={r.url}
+              resource={r}
+              isOwner={currentUserId === r.user_id}
+              onEdit={() => { setEditingResource(r); setShowEditModal(true); }}
+              onDelete={() => setResourceToDelete(r.id)}
             />
           ))}
           {resources.length === 0 && (
@@ -155,6 +232,7 @@ const Resources: React.FC = () => {
         </div>
       </div>
 
+      {/* Add Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowAddModal(false)}></div>
@@ -312,6 +390,141 @@ const Resources: React.FC = () => {
         </div>
       )}
 
+      {/* Edit Modal */}
+      {showEditModal && editingResource && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowEditModal(false)}></div>
+          <div className="bg-background-dark w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl p-6 relative z-10 border border-white/10 shadow-2xl animate-in zoom-in-95 duration-200 custom-scrollbar">
+            <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary">edit</span>
+              Editar Recurso
+            </h3>
+            <form onSubmit={handleUpdateResource} className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Categoria</label>
+                  <select
+                    value={editingResource.category}
+                    onChange={e => setEditingResource({ ...editingResource, category: e.target.value })}
+                    className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl p-3 outline-none focus:border-primary transition-colors text-sm text-[var(--text-primary)] appearance-none font-bold"
+                  >
+                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="Nutrição">Nutrição</option>
+                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="Sono">Sono</option>
+                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="Movimento">Movimento</option>
+                    <option className="bg-[var(--card)] text-[var(--text-primary)]" value="Mente">Mente</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Título</label>
+                <input
+                  required
+                  type="text"
+                  value={editingResource.title}
+                  onChange={e => setEditingResource({ ...editingResource, title: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-primary transition-colors text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Descrição Curta</label>
+                <textarea
+                  required
+                  value={editingResource.description}
+                  onChange={e => setEditingResource({ ...editingResource, description: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-primary transition-colors h-20 text-sm resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">URL da Imagem</label>
+                <input
+                  type="url"
+                  value={editingResource.image}
+                  onChange={e => setEditingResource({ ...editingResource, image: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-primary transition-colors text-sm"
+                />
+              </div>
+
+              {editingResource.type === 'video' ? (
+                <div>
+                  <label className="text-xs font-bold text-primary uppercase mb-1 block">Link do Vídeo</label>
+                  <input
+                    required
+                    type="url"
+                    value={editingResource.url}
+                    onChange={e => setEditingResource({ ...editingResource, url: e.target.value })}
+                    className="w-full bg-white/5 border border-primary/30 rounded-xl p-3 outline-none focus:border-primary transition-colors text-sm"
+                  />
+                </div>
+              ) : (
+                editingResource.content && (
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Conteúdo</label>
+                    <textarea
+                      required
+                      value={editingResource.content}
+                      onChange={e => setEditingResource({ ...editingResource, content: e.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-primary transition-colors h-48 text-sm resize-none custom-scrollbar"
+                    />
+                  </div>
+                )
+              )}
+
+              <div className="flex gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 bg-white/5 text-white font-bold py-3 rounded-xl hover:bg-white/10 transition-all border border-white/5"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 bg-primary text-black font-bold py-3 rounded-xl hover:bg-primary-dark transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                >
+                  {loading ? 'Salvando...' : 'Atualizar'}
+                </button>
+              </div>
+              <div className="h-6"></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {resourceToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[var(--card)] w-full max-w-sm rounded-[24px] border border-[var(--card-border)] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="size-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4 text-red-500">
+                <span className="material-symbols-outlined text-3xl">delete</span>
+              </div>
+              <h3 className="text-lg font-black text-[var(--text-primary)] mb-2">Excluir Recurso?</h3>
+              <p className="text-sm text-[var(--text-secondary)] mb-6">
+                Essa ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setResourceToDelete(null)}
+                  className="flex-1 py-3 rounded-xl font-bold text-[var(--text-primary)] hover:bg-white/5 transition-colors border border-[var(--card-border)]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDeleteResource}
+                  className="flex-1 py-3 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                >
+                  Sim, Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewingArticle && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setViewingArticle(null)}></div>
@@ -352,17 +565,41 @@ const Resources: React.FC = () => {
   );
 };
 
-const ResourceCard: React.FC<{ title: string; desc: string; img: string; url?: string }> = ({ title, desc, img, url }) => (
+interface ResourceCardProps {
+  resource: any;
+  isOwner: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+const ResourceCard: React.FC<ResourceCardProps> = ({ resource, isOwner, onEdit, onDelete }) => (
   <div
-    onClick={() => url && window.open(url, '_blank')}
-    className="flex items-center p-3 rounded-2xl bg-[var(--card)] border border-[var(--card-border)] shadow-sm active:scale-[0.98] transition-all duration-300 cursor-pointer group hover:border-primary/40 hover:shadow-md"
+    onClick={() => resource.url && window.open(resource.url, '_blank')}
+    className="flex items-center p-3 rounded-2xl bg-[var(--card)] border border-[var(--card-border)] shadow-sm active:scale-[0.98] transition-all duration-300 cursor-pointer group hover:border-primary/40 hover:shadow-md relative"
   >
+    {isOwner && (
+      <div className="absolute top-1 right-1 z-10 flex gap-1">
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="size-6 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black transition-colors"
+        >
+          <span className="material-symbols-outlined text-[10px]">edit</span>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="size-6 rounded-full bg-red-500/50 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+        >
+          <span className="material-symbols-outlined text-[10px]">delete</span>
+        </button>
+      </div>
+    )}
+
     <div className="size-16 rounded-xl overflow-hidden shrink-0 border border-[var(--card-border)] shadow-inner">
-      <img src={img || "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=100&h=100&fit=crop"} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={title} />
+      <img src={resource.image || "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=100&h=100&fit=crop"} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={resource.title} />
     </div>
     <div className="ml-4 flex-1 min-w-0">
-      <h4 className="font-black text-sm text-[var(--text-primary)] leading-tight group-hover:text-primary transition-colors truncate uppercase tracking-tight">{title}</h4>
-      <p className="text-[var(--text-muted)] text-[10px] mt-1 line-clamp-2 font-medium tracking-tight leading-relaxed">{desc}</p>
+      <h4 className="font-black text-sm text-[var(--text-primary)] leading-tight group-hover:text-primary transition-colors truncate uppercase tracking-tight">{resource.title}</h4>
+      <p className="text-[var(--text-muted)] text-[10px] mt-1 line-clamp-2 font-medium tracking-tight leading-relaxed">{resource.description}</p>
     </div>
     <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-black transition-all border border-primary/20">
       <span className="material-symbols-outlined font-black text-xl">play_arrow</span>

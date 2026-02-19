@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
@@ -8,8 +6,7 @@ import { getLevel } from '../components/LevelProgress';
 const Ranking: React.FC = () => {
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
     const [allUsers, setAllUsers] = useState<any[]>([]);
-    const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
-    const [socialPosts, setSocialPosts] = useState<any[]>([]);
+    const [feedItems, setFeedItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [newPostText, setNewPostText] = useState('');
@@ -25,7 +22,8 @@ const Ranking: React.FC = () => {
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [editingPostId, setEditingPostId] = useState<string | null>(null);
     const [editPostText, setEditPostText] = useState('');
-    const [postToDelete, setPostToDelete] = useState<string | null>(null);
+    const [postToDelete, setPostToDelete] = useState<{ id: string, type: 'post' | 'workout' } | null>(null);
+    const [editingType, setEditingType] = useState<'post' | 'workout' | null>(null);
 
     const userMap = React.useMemo(() => {
         return new Map(allUsers.map(u => [u.id, u]));
@@ -54,11 +52,8 @@ const Ranking: React.FC = () => {
 
             setLeaderboard(lb);
             setAllUsers(au || []);
-            setRecentWorkouts(rw || []);
 
-            // Filter out automatic system posts (Metas, Peso, etc) to keep feed clean like Facebook
-            // unless it's a 'Treino' which is usually interesting, but we have a separate video section.
-            // Let's keep manual posts and maybe some major achievements if desired, but user asked to clean 'Metas'.
+            // Filter out automatic system posts
             const cleanPosts = (sp || []).filter((p: any) => {
                 const text = p.text || '';
                 // Block list of automatic phrases
@@ -68,10 +63,17 @@ const Ranking: React.FC = () => {
                 if (text.includes('Peso registrado')) return false;
                 if (text.includes('Medidas registradas')) return false;
                 if (text.includes('Medidas atualizadas')) return false;
-                if (text.includes('Acabei de validar meu treino')) return false; // Treinos have their own section
+                if (text.includes('Acabei de validar meu treino')) return false;
                 return true;
             });
-            setSocialPosts(cleanPosts);
+
+            // Combine and sort feed
+            const posts = cleanPosts.map((p: any) => ({ ...p, type: 'post', dateObj: new Date(p.created_at) }));
+            const workouts = (rw || []).map((w: any) => ({ ...w, type: 'workout', dateObj: new Date(w.created_at) }));
+
+            const combinedFeed = [...posts, ...workouts].sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
+            setFeedItems(combinedFeed);
+
         } catch (err) {
             console.error('General load error:', err);
         } finally {
@@ -111,8 +113,12 @@ const Ranking: React.FC = () => {
     const confirmDelete = async () => {
         if (!postToDelete) return;
         try {
-            await api.deleteSocialPost(postToDelete);
-            window.showToast('Publicação excluída!', 'success');
+            if (postToDelete.type === 'workout') {
+                await api.deleteWorkout(postToDelete.id);
+            } else {
+                await api.deleteSocialPost(postToDelete.id);
+            }
+            window.showToast('Item excluído!', 'success');
             loadData();
         } catch (err) {
             console.error(err);
@@ -125,10 +131,10 @@ const Ranking: React.FC = () => {
     const handleWorkoutLike = async (workoutId: string) => {
         try {
             const liked = await api.toggleWorkoutLike(workoutId);
-            setRecentWorkouts(prev => prev.map(w =>
-                w.id === workoutId
-                    ? { ...w, is_liked: liked, likes_count: (w.likes_count || 0) + (liked ? 1 : -1) }
-                    : w
+            setFeedItems(prev => prev.map(item =>
+                item.type === 'workout' && item.id === workoutId
+                    ? { ...item, is_liked: liked, likes_count: (item.likes_count || 0) + (liked ? 1 : -1) }
+                    : item
             ));
         } catch (err) {
             console.error(err);
@@ -168,10 +174,10 @@ const Ranking: React.FC = () => {
         try {
             const liked = await api.toggleLike(postId);
             // Optimistic update
-            setSocialPosts(prev => prev.map(p =>
-                p.id === postId
-                    ? { ...p, is_liked: liked, likes_count: (p.likes_count || 0) + (liked ? 1 : -1) }
-                    : p
+            setFeedItems(prev => prev.map(item =>
+                item.type === 'post' && item.id === postId
+                    ? { ...item, is_liked: liked, likes_count: (item.likes_count || 0) + (liked ? 1 : -1) }
+                    : item
             ));
         } catch (err) {
             console.error(err);
@@ -209,14 +215,32 @@ const Ranking: React.FC = () => {
         }
     };
 
-    const openComments = async (post: any, type: 'social' | 'workout' = 'social') => {
+    const openComments = async (item: any, type: 'social' | 'workout' = 'social') => {
         try {
             const comments = type === 'workout'
-                ? await api.getWorkoutComments(post.id)
-                : await api.getComments(post.id);
-            setActivePostComments({ ...post, comments, commentType: type });
+                ? await api.getWorkoutComments(item.id)
+                : await api.getComments(item.id);
+            setActivePostComments({ ...item, comments, commentType: type });
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingPostId || !editPostText.trim() || !editingType) return;
+        try {
+            if (editingType === 'workout') {
+                await api.updateWorkout(editingPostId, editPostText);
+            } else {
+                await api.updateSocialPost(editingPostId, editPostText);
+            }
+            window.showToast('Atualizado com sucesso!', 'success');
+            setEditingPostId(null);
+            setEditingType(null);
+            loadData();
+        } catch (err) {
+            console.error(err);
+            window.showToast('Erro ao atualizar', 'error');
         }
     };
 
@@ -322,32 +346,29 @@ const Ranking: React.FC = () => {
                 </form>
             </div>
 
-            {/* Feed Tabs? No, just list them mixed or separate. Let's put Leaderboard at bottom or dedicated tab. 
-                For now, vertical layout: Feed -> Recent Videos -> Leaderboard */}
+            {/* Social Feed (Unified) */}
+            <div>
+                <h2 className="text-xl font-black mb-4 flex items-center gap-2 text-[var(--text-primary)]">
+                    <span className="material-symbols-outlined text-primary">forum</span>
+                    Resenha da Estrada & Cine Rodovia
+                </h2>
 
-            {/* Feed Section - Facebook Style */}
-            <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-6">
+                    {feedItems.length === 0 && !loading && <p className="text-center text-[var(--text-muted)] italic">Nenhuma resenha ainda. Seja o primeiro!</p>}
 
-                {/* Social Feed */}
-                <div>
-                    <h2 className="text-xl font-black mb-4 flex items-center gap-2 text-[var(--text-primary)]">
-                        <span className="material-symbols-outlined text-primary">forum</span>
-                        Resenha da Estrada
-                    </h2>
+                    {feedItems.map(item => {
+                        const isWorkout = item.type === 'workout';
 
-                    {/* Posts List */}
-                    <div className="flex flex-col gap-4">
-                        {socialPosts.length === 0 && !loading && <p className="text-center text-[var(--text-muted)] italic">Nenhuma resenha ainda. Seja o primeiro!</p>}
-
-                        {socialPosts.map(post => (
-                            <div key={post.id} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm animate-in slide-in-from-bottom duration-500 relative group/post">
+                        return (
+                            <div key={`${item.type}-${item.id}`} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm animate-in slide-in-from-bottom duration-500 relative group/post">
                                 {/* Edit/Delete Menu for Owner */}
-                                {currentUserId === post.user_id && !editingPostId && (
+                                {currentUserId === item.user_id && !editingPostId && (
                                     <div className="absolute top-4 right-4 flex gap-2">
                                         <button
                                             onClick={() => {
-                                                setEditingPostId(post.id);
-                                                setEditPostText(post.text);
+                                                setEditingPostId(item.id);
+                                                setEditPostText(isWorkout ? item.caption : item.text);
+                                                setEditingType(item.type);
                                             }}
                                             className="size-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black transition-colors"
                                             title="Editar"
@@ -355,7 +376,7 @@ const Ranking: React.FC = () => {
                                             <span className="material-symbols-outlined text-xs">edit</span>
                                         </button>
                                         <button
-                                            onClick={() => setPostToDelete(post.id)}
+                                            onClick={() => setPostToDelete({ id: item.id, type: item.type })}
                                             className="size-8 rounded-full bg-red-500/50 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
                                             title="Excluir"
                                         >
@@ -367,22 +388,29 @@ const Ranking: React.FC = () => {
                                 <div className="flex items-center gap-3 mb-3">
                                     <div
                                         className="size-10 rounded-full bg-cover bg-center border border-primary/20"
-                                        style={{ backgroundImage: `url('${post.user_avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + post.name}')` }}
+                                        style={{ backgroundImage: `url('${item.user_avatar_url || item.user_stats?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + (item.name || item.user_stats?.nickname || "User")}')` }}
                                     />
                                     <div>
                                         <div className="flex items-center gap-1">
-                                            <p className="font-black text-[var(--text-primary)] text-sm uppercase tracking-tight">{post.name}</p>
-                                            {post.user_id && userMap.get(post.user_id)?.points && (
-                                                <span className="text-sm" title={getLevel(userMap.get(post.user_id)?.points || 0).name}>
-                                                    {getLevel(userMap.get(post.user_id)?.points || 0).icon}
+                                            <p className="font-black text-[var(--text-primary)] text-sm uppercase tracking-tight">{item.name || item.user_stats?.nickname}</p>
+
+                                            {/* Level Badge (if available, simpler check here) */}
+                                            {item.user_id && userMap.get(item.user_id)?.points && (
+                                                <span className="text-sm" title={getLevel(userMap.get(item.user_id)?.points || 0).name}>
+                                                    {getLevel(userMap.get(item.user_id)?.points || 0).icon}
                                                 </span>
                                             )}
+
+                                            {isWorkout && <div className="ml-1 bg-primary/10 px-2 py-0.5 rounded text-[8px] font-black text-primary uppercase">TREINO VALIDADO</div>}
                                         </div>
-                                        <p className="text-[10px] text-[var(--text-muted)] font-bold">{post.time_ago || "Hoje"}</p>
+                                        <p className="text-[10px] text-[var(--text-muted)] font-bold">
+                                            {item.time_ago || `${new Date(item.created_at).toLocaleDateString()} • ${new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                        </p>
                                     </div>
                                 </div>
 
-                                {editingPostId === post.id ? (
+                                {/* EDITING MODE */}
+                                {editingPostId === item.id ? (
                                     <div className="mb-3">
                                         <textarea
                                             value={editPostText}
@@ -393,24 +421,16 @@ const Ranking: React.FC = () => {
                                         />
                                         <div className="flex gap-2 justify-end mt-2">
                                             <button
-                                                onClick={() => setEditingPostId(null)}
+                                                onClick={() => {
+                                                    setEditingPostId(null);
+                                                    setEditingType(null);
+                                                }}
                                                 className="px-3 py-1.5 rounded-lg text-xs font-bold text-[var(--text-secondary)] hover:bg-white/5"
                                             >
                                                 Cancelar
                                             </button>
                                             <button
-                                                onClick={async () => {
-                                                    if (!editPostText.trim()) return;
-                                                    try {
-                                                        await api.updateSocialPost(post.id, editPostText);
-                                                        window.showToast('Publicação atualizada!', 'success');
-                                                        setEditingPostId(null);
-                                                        loadData();
-                                                    } catch (err) {
-                                                        console.error(err);
-                                                        window.showToast('Erro ao atualizar', 'error');
-                                                    }
-                                                }}
+                                                onClick={handleSaveEdit}
                                                 className="bg-primary text-black px-3 py-1.5 rounded-lg text-xs font-bold hover:brightness-110"
                                             >
                                                 Salvar
@@ -418,112 +438,67 @@ const Ranking: React.FC = () => {
                                         </div>
                                     </div>
                                 ) : (
-                                    <p className="text-[var(--text-primary)] text-sm font-medium mb-3 leading-relaxed">
-                                        {post.text}
-                                    </p>
-                                )}
-
-                                {/* Post Image */}
-                                {post.image_url && (
-                                    <div className="rounded-xl overflow-hidden mb-3 border border-[var(--card-border)] bg-black/50">
-                                        <img src={post.image_url} alt="Post content" className="w-full h-auto max-h-96 object-contain" />
+                                    // CONTENT DISPLAY
+                                    <div className="mb-3">
+                                        {isWorkout ? (
+                                            <>
+                                                {item.caption && (
+                                                    <p className="text-[var(--text-primary)] text-sm font-medium mb-3 leading-relaxed italic">
+                                                        "{item.caption}"
+                                                    </p>
+                                                )}
+                                                <div className="relative aspect-video bg-black flex items-center justify-center rounded-xl overflow-hidden border border-[var(--card-border)]">
+                                                    <video
+                                                        src={item.video_url}
+                                                        className="w-full h-full object-contain"
+                                                        controls
+                                                        playsInline
+                                                    />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <p className="text-[var(--text-primary)] text-sm font-medium mb-3 leading-relaxed">
+                                                    {item.text}
+                                                </p>
+                                                {item.image_url && (
+                                                    <div className="rounded-xl overflow-hidden mb-3 border border-[var(--card-border)] bg-black/50">
+                                                        <img src={item.image_url} alt="Post content" className="w-full h-auto max-h-96 object-contain" />
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
                                     </div>
                                 )}
 
                                 {/* Stat Badge if post has stats */}
-                                {post.stats && (
+                                {item.stats && (
                                     <span className="inline-block bg-primary/10 text-primary text-[10px] font-black px-2 py-1 rounded-md mb-3">
-                                        {post.stats}
+                                        {item.stats}
                                     </span>
                                 )}
 
                                 <div className="flex items-center gap-4 border-t border-[var(--card-border)] pt-3">
                                     <button
-                                        onClick={() => handleLike(post.id)}
-                                        className={`flex items-center gap-1 text-xs font-bold transition-colors ${post.is_liked ? 'text-red-500' : 'text-[var(--text-muted)] hover:text-red-500'}`}
+                                        onClick={() => isWorkout ? handleWorkoutLike(item.id) : handleLike(item.id)}
+                                        className={`flex items-center gap-1 text-xs font-bold transition-colors ${item.is_liked ? 'text-red-500' : 'text-[var(--text-muted)] hover:text-red-500'}`}
                                     >
-                                        <span className={`material-symbols-outlined text-lg ${post.is_liked ? 'material-symbols-filled' : ''}`}>favorite</span>
-                                        {post.likes_count > 0 && post.likes_count}
+                                        <span className={`material-symbols-outlined text-lg ${item.is_liked ? 'material-symbols-filled' : ''}`}>favorite</span>
+                                        {item.likes_count > 0 && item.likes_count}
                                     </button>
                                     <button
-                                        onClick={() => openComments(post)}
+                                        onClick={() => openComments(item, isWorkout ? 'workout' : 'social')}
                                         className="flex items-center gap-1 text-xs font-bold text-[var(--text-muted)] hover:text-primary transition-colors"
                                     >
                                         <span className="material-symbols-outlined text-lg">chat_bubble_outline</span>
-                                        {post.comments_count > 0 ? `${post.comments_count} Comentários` : 'Comentar'}
+                                        {item.comments_count > 0 ? `${item.comments_count} Comentários` : 'Comentar'}
                                     </button>
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                        );
+                    })}
                 </div>
-
-                {/* Recent Workouts Feed (Videos) */}
-                {recentWorkouts.length > 0 && (
-                    <div className="mt-4">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-black flex items-center gap-2 text-[var(--text-primary)]">
-                                <span className="material-symbols-outlined text-primary">movie</span>
-                                Cine Rodovia
-                            </h2>
-                            <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest">Treinos da Galera</span>
-                        </div>
-
-                        <div className="flex flex-col gap-6">
-                            {recentWorkouts.map((workout, i) => (
-                                <div key={workout.id || i} className="bg-[var(--card)] border border-[var(--card-border)] rounded-2xl overflow-hidden shadow-lg hover:border-primary/30 transition-all">
-                                    <div className="p-4 flex items-center gap-3">
-                                        <div
-                                            className="size-8 rounded-full bg-cover bg-center border border-primary/20 shadow-sm"
-                                            style={{ backgroundImage: `url('${workout.user_stats?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + (workout.user_stats?.nickname || i)}')` }}
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-black text-[var(--text-primary)] truncate uppercase tracking-tight">{workout.user_stats?.nickname || 'Parceiro'}</p>
-                                            <p className="text-[10px] text-[var(--text-muted)] font-bold">{new Date(workout.created_at).toLocaleDateString()} • {new Date(workout.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                        </div>
-                                        <div className="bg-primary/10 px-2 py-1 rounded text-[8px] font-black text-primary uppercase">VERIFICADO</div>
-                                    </div>
-
-                                    {workout.caption && (
-                                        <p className="px-4 pb-3 text-xs font-medium text-[var(--text-secondary)] italic">
-                                            "{workout.caption}"
-                                        </p>
-                                    )}
-
-                                    <div className="relative aspect-video bg-black flex items-center justify-center">
-                                        <video
-                                            src={workout.video_url}
-                                            className="w-full h-full object-contain"
-                                            controls
-                                            playsInline
-                                        />
-                                    </div>
-
-                                    <div className="p-3 border-t border-[var(--card-border)] flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <button
-                                                onClick={() => handleWorkoutLike(workout.id)}
-                                                className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${workout.is_liked ? 'text-red-500' : 'text-[var(--text-muted)] hover:text-red-500'}`}
-                                            >
-                                                <span className={`material-symbols-outlined text-lg ${workout.is_liked ? 'material-symbols-filled' : ''}`}>favorite</span>
-                                                {workout.likes_count > 0 ? workout.likes_count : 'Curtir'}
-                                            </button>
-                                            <button
-                                                onClick={() => openComments(workout, 'workout')}
-                                                className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-muted)] hover:text-primary transition-colors"
-                                            >
-                                                <span className="material-symbols-outlined text-lg">chat_bubble_outline</span>
-                                                {workout.comments_count > 0 ? `${workout.comments_count} Comentários` : 'Comentar'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
-
 
             {/* Comments Modal */}
             {activePostComments && (
@@ -626,4 +601,3 @@ const Ranking: React.FC = () => {
 };
 
 export default Ranking;
-

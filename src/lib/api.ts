@@ -735,6 +735,16 @@ export const api = {
         return data;
     },
 
+    updateResource: async (id: string, updates: any) => {
+        const { error } = await supabase.from('resources').update(updates).eq('id', id);
+        if (error) throw error;
+    },
+
+    deleteResource: async (id: string) => {
+        const { error } = await supabase.from('resources').delete().eq('id', id);
+        if (error) throw error;
+    },
+
     uploadResourceFile: async (file: File) => {
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) throw new Error('Not authenticated');
@@ -808,20 +818,9 @@ export const api = {
             throw insError;
         }
 
-        // Automatic Social Post
-        try {
-            const { data: stats } = await supabase.from('user_stats').select('nickname, avatar_url').eq('user_id', user.id).single();
-            await supabase.from('social_posts').insert({
-                name: stats?.nickname || 'Parceiro',
-                user_avatar_url: stats?.avatar_url,
-                text: `Acabei de validar meu treino! +200 pontos no Ranking! 🏋️‍♂️🏆`,
-                time_ago: 'Agora',
-                color: 'primary',
-                user_id: user.id
-            });
-        } catch (postErr) {
-            console.error('Error creating automatic social post:', postErr);
-        }
+        // Automatic Social Post RECOVERY: The video itself will now be part of the feed
+        // so we don't need a separate text post.
+        // await api.checkAndAwardMedals().catch(console.error);
         await api.checkAndAwardMedals().catch(console.error);
 
         return publicUrl;
@@ -941,6 +940,16 @@ export const api = {
             await supabase.from('workout_likes').insert({ workout_id: workoutId, user_id: user.id });
             return true;
         }
+    },
+
+    updateWorkout: async (workoutId: string, caption: string) => {
+        const { error } = await supabase.from('workout_recordings').update({ caption }).eq('id', workoutId);
+        if (error) throw error;
+    },
+
+    deleteWorkout: async (workoutId: string) => {
+        const { error } = await supabase.from('workout_recordings').delete().eq('id', workoutId);
+        if (error) throw error;
     },
 
     getUserMedals: async () => {
