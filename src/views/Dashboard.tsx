@@ -13,13 +13,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [goals, setGoals] = useState<any[]>([]);
   const [notification, setNotification] = useState<any | null>(null);
   const [userNotifications, setUserNotifications] = useState<any[]>([]);
+  const [appNotifications, setAppNotifications] = useState<any[]>([]); // New state for global notifications
   const [showNotifications, setShowNotifications] = useState(false);
 
   const loadData = () => {
     api.getUserStats().then(setStats).catch(console.error);
     api.getDailyGoals().then(setGoals).catch(console.error);
     api.getNotifications().then(list => {
-      if (list && list.length > 0) setNotification(list[0]);
+      if (list) {
+        setAppNotifications(list);
+        if (list.length > 0) setNotification(list[0]);
+      }
     }).catch(console.error);
     api.getUserNotifications().then(setUserNotifications).catch(console.error);
     api.checkAndAwardMedals().catch(console.error);
@@ -44,7 +48,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     }
   };
 
-  const unreadCount = userNotifications.filter(n => !n.read).length;
+  // Combine and sort notifications
+  const allNotifications = [
+    ...appNotifications.map(n => ({ ...n, isApp: true, read: false })), // Always treated as 'unread' or highlighted
+    ...userNotifications
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const unreadCount = userNotifications.filter(n => !n.read).length + appNotifications.length;
 
   return (
     <div className="flex flex-col min-h-screen pb-24">
@@ -95,14 +105,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     )}
                   </div>
                   <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-                    {userNotifications.length === 0 ? (
+                    {allNotifications.length === 0 ? (
                       <div className="p-6 text-center text-[var(--text-muted)] text-xs italic">
                         Nenhuma novidade por enquanto.
                       </div>
                     ) : (
-                      userNotifications.map((n) => (
-                        <div key={n.id} className={`p-3 border-b border-[var(--card-border)] hover:bg-white/5 transition-colors flex gap-3 ${!n.read ? 'bg-primary/5' : ''}`}>
-                          <div className={`mt-1 size-2 rounded-full shrink-0 ${!n.read ? 'bg-primary' : 'bg-transparent'}`}></div>
+                      allNotifications.map((n) => (
+                        <div key={`${n.isApp ? 'app' : 'user'}-${n.id}`} className={`p-3 border-b border-[var(--card-border)] hover:bg-white/5 transition-colors flex gap-3 ${!n.read || n.isApp ? 'bg-primary/5' : ''}`}>
+                          <div className={`mt-1 size-2 rounded-full shrink-0 ${!n.read || n.isApp ? (n.type === 'urgent' ? 'bg-red-500' : 'bg-primary') : 'bg-transparent'}`}></div>
                           <div>
                             <p className="text-xs font-black text-[var(--text-primary)] mb-0.5">{n.title}</p>
                             <p className="text-[10px] text-[var(--text-secondary)] leading-snug">{n.message}</p>
