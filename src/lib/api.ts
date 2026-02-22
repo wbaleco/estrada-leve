@@ -18,10 +18,34 @@ export const api = {
             throw error;
         }
 
+        // Calculate challenge day dynamically from challenge_start_date or created_at
+        const startDateStr = data.challenge_start_date || data.created_at;
+        // Use local date parts to avoid UTC shift
+        const [year, month, day] = (startDateStr.split('T')[0]).split('-').map(Number);
+        const startDate = new Date(year, month - 1, day);
+
+        // Fixed End Date: June 30th, 2026
+        const endDate = new Date(2026, 5, 30); // month is 0-indexed, 5 = June
+
+        // Current date normalized to midnight
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Normalize start and end
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(0, 0, 0, 0);
+
+        const diffTime = today.getTime() - startDate.getTime();
+        const calculatedDay = Math.max(1, Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1);
+
+        const diffTotal = endDate.getTime() - startDate.getTime();
+        const totalDays = Math.max(calculatedDay, Math.floor(diffTotal / (1000 * 60 * 60 * 24)) + 1);
+
         // Map snake_case to camelCase
         return {
-            day: data.day,
-            totalDays: data.total_days,
+            day: calculatedDay,
+            totalDays: totalDays,
+            challengeStartDate: startDateStr.split('T')[0],
             weightLost: data.weight_lost,
             points: data.points,
             currentWeight: data.current_weight,
@@ -76,6 +100,11 @@ export const api = {
     updateProfile: async (userId: string, updates: any) => {
         const { error } = await supabase.from('user_stats').update(updates).eq('user_id', userId);
         if (error) throw error;
+    },
+
+    getCurrentUser: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        return user;
     },
 
     deleteProfile: async (userId: string) => {
@@ -280,6 +309,16 @@ export const api = {
             console.error('Error creating automatic meal post:', postErr);
         }
         await api.checkAndAwardMedals().catch(console.error);
+    },
+
+    updateMeal: async (id: string, updates: any) => {
+        const { error } = await supabase.from('meals').update(updates).eq('id', id);
+        if (error) throw error;
+    },
+
+    deleteMeal: async (id: string) => {
+        const { error } = await supabase.from('meals').delete().eq('id', id);
+        if (error) throw error;
     },
 
     toggleMealConsumed: async (id: string, consumed: boolean) => {

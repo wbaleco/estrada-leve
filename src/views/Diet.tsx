@@ -15,6 +15,8 @@ const Diet: React.FC = () => {
   const mealInputRef = React.useRef<HTMLInputElement>(null);
 
   const [userStats, setUserStats] = useState<any>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [editingMealId, setEditingMealId] = useState<string | null>(null);
 
   const loadData = () => {
     api.getMeals().then(data => {
@@ -23,6 +25,9 @@ const Diet: React.FC = () => {
 
     api.getShoppingList().then(setShoppingList).catch(console.error);
     api.getUserStats().then(setUserStats).catch(console.error);
+    api.getCurrentUser().then(user => {
+      if (user) setCurrentUserId(user.id);
+    }).catch(console.error);
   };
 
   React.useEffect(() => {
@@ -75,6 +80,33 @@ const Diet: React.FC = () => {
     }
   };
 
+  const handleEditMeal = (meal: Meal) => {
+    setNewMeal({
+      name: meal.name,
+      description: meal.description,
+      calories: meal.calories || 300,
+      category: meal.category as any
+    });
+    setEditingMealId(meal.id);
+    setMealImagePreview(meal.image);
+    setShowAddModal(true);
+  };
+
+  const handleDeleteMeal = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const confirmed = await window.showConfirm('Tem certeza que deseja excluir esta refeição?');
+    if (confirmed) {
+      try {
+        await api.deleteMeal(id);
+        loadData();
+        window.showToast('Refeição excluída', 'success');
+      } catch (err) {
+        console.error(err);
+        window.showToast('Erro ao excluir', 'error');
+      }
+    }
+  };
+
   const handleAddMeal = async (e: React.FormEvent) => {
     e.preventDefault();
     setUploadingMeal(true);
@@ -83,22 +115,35 @@ const Diet: React.FC = () => {
 
       if (mealImage) {
         imageUrl = await api.uploadMealImage(mealImage);
+      } else if (editingMealId) {
+        // Keep existing image if not changing
+        const existing = meals.find(m => m.id === editingMealId);
+        if (existing) imageUrl = existing.image;
       }
 
-      await api.logMeal({
-        ...newMeal,
-        image: imageUrl,
-        consumed: true,
-        time_prep: 'Agora',
-        tags: ['Real-time']
-      });
+      if (editingMealId) {
+        await api.updateMeal(editingMealId, {
+          ...newMeal,
+          image: imageUrl
+        });
+        window.showToast('Refeição atualizada!', 'success');
+      } else {
+        await api.logMeal({
+          ...newMeal,
+          image: imageUrl,
+          consumed: true,
+          time_prep: 'Agora',
+          tags: ['Real-time']
+        });
+        window.showToast('Refeição salva e postada no Mural! +20 pontos', 'success');
+      }
 
       setShowAddModal(false);
       setNewMeal({ name: '', description: '', calories: 300, category: 'lunch' });
+      setEditingMealId(null);
       setMealImage(null);
       setMealImagePreview(null);
       loadData();
-      window.showToast('Refeição salva e postada no Mural! +20 pontos', 'success');
     } catch (err: any) {
       console.error('Error adding meal:', err);
       // More descriptive error
@@ -287,7 +332,25 @@ const Diet: React.FC = () => {
             </div>
             <div>
               <div className="flex justify-between items-start">
-                <h4 className={`text-lg font-black leading-tight ${meal.consumed ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}`}>{meal.name}</h4>
+                <div className="flex-1 min-w-0 pr-2">
+                  <h4 className={`text-lg font-black leading-tight truncate ${meal.consumed ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}`}>{meal.name}</h4>
+                  {meal.user_id === currentUserId && !meal.is_suggestion && (
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleEditMeal(meal); }}
+                        className="text-[10px] font-bold text-primary hover:underline"
+                      >
+                        EDITAR
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteMeal(e, meal.id)}
+                        className="text-[10px] font-bold text-red-500 hover:underline"
+                      >
+                        EXCLUIR
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() => handleToggleConsumed(meal.id, meal.consumed)}
                   className={`size-10 rounded-full flex items-center justify-center transition-all shadow-sm transform active:scale-90 ${meal.consumed ? 'bg-primary text-black shadow-primary/20' : 'bg-gray-100 dark:bg-white/5 text-[var(--text-muted)] border border-transparent hover:border-primary/50 hover:text-primary'}`}

@@ -68,9 +68,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             />
             <div className="absolute bottom-0 right-0 size-3 bg-primary rounded-full border-2 border-background-dark"></div>
           </div>
-          <div className="flex flex-col">
-            <h2 className="text-sm font-normal text-gray-500 dark:text-gray-400 leading-none">Olá, {stats?.nickname || 'Parceiro'}</h2>
-            <span className="text-base font-bold leading-tight">Estrada Leve</span>
+          <div className="flex flex-col min-w-0">
+            <h2 className="text-sm font-bold text-gray-600 dark:text-gray-300 leading-none truncate mb-1">Olá, {stats?.nickname || 'Parceiro'}</h2>
+            <span className="text-base font-black leading-tight text-primary uppercase tracking-tighter">Estrada Leve</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -275,10 +275,10 @@ const StatCard: React.FC<{ icon: string; label: string; value: string; total?: s
   <div className="flex min-w-[100px] flex-1 flex-col gap-1 rounded-2xl p-4 bg-[var(--card)] shadow-sm border border-[var(--card-border)]">
     <div className="flex items-center gap-2 mb-1">
       <span className="material-symbols-outlined text-primary text-[18px] font-bold">{icon}</span>
-      <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">{label}</p>
+      <p className="text-gray-600 dark:text-gray-300 text-[10px] font-black uppercase tracking-widest">{label}</p>
     </div>
     <p className="text-2xl font-black text-[var(--text-primary)] leading-tight">
-      {value} {total && <span className="text-xs font-bold text-[var(--text-muted)]">{total}</span>} {unit && <span className="text-xs font-bold text-[var(--text-muted)]">{unit}</span>}
+      {value} {total && <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{total}</span>} {unit && <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{unit}</span>}
     </p>
   </div>
 );
@@ -291,7 +291,7 @@ const GoalRow: React.FC<{ icon: string; label: string; current: string; target: 
     <div className="flex-1">
       <div className="flex justify-between items-center mb-1">
         <p className={`text-sm font-black tracking-tight ${completed ? 'text-primary' : 'text-[var(--text-primary)]'}`}>{label}</p>
-        <span className={`text-[10px] font-black tracking-tighter ${completed ? 'text-primary' : 'text-[var(--text-muted)]'}`}>{current} / {target}</span>
+        <span className={`text-[10px] font-black tracking-tighter ${completed ? 'text-primary' : 'text-gray-600 dark:text-gray-300'}`}>{current} / {target}</span>
       </div>
       <div className="h-4 w-full bg-black/30 dark:bg-white/5 rounded-full overflow-hidden shadow-inner mb-2 border border-white/5">
         <div

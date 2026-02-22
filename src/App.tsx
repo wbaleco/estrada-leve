@@ -200,7 +200,7 @@ const App: React.FC = () => {
       </main>
 
       {/* Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-[#151c0d] border-t border-gray-200 dark:border-white/5 pb-safe pt-2 px-2 flex justify-between items-center z-50 h-[80px]">
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-[#0d1208] border-t-2 border-gray-200 dark:border-white/10 pb-safe pt-2 px-1 flex justify-around items-center z-50 h-[85px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] dark:shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
         <NavButton
           active={activeView === View.DASHBOARD}
           onClick={() => setActiveView(View.DASHBOARD)}
@@ -306,10 +306,20 @@ interface NavButtonProps {
 const NavButton: React.FC<NavButtonProps> = ({ active, onClick, icon, label }) => (
   <button
     onClick={onClick}
-    className={`flex flex-col items-center gap-1 w-16 transition-colors ${active ? 'text-primary' : 'text-gray-400 dark:text-gray-500'}`}
+    className={`flex flex-col items-center justify-center gap-0.5 w-14 h-14 rounded-2xl transition-all duration-300 relative ${active ? 'text-primary scale-110' : 'text-gray-500 dark:text-gray-400'
+      }`}
   >
-    <span className={`material-symbols-outlined text-2xl ${active ? 'material-symbols-filled' : ''}`}>{icon}</span>
-    <span className="text-[10px] font-bold">{label}</span>
+    {/* Active Glow/Indicator */}
+    {active && (
+      <>
+        <span className="absolute -top-1 w-6 h-1 bg-primary rounded-full shadow-[0_0_12px_#8cf425]" />
+        <span className="absolute inset-0 bg-primary/5 rounded-2xl animate-pulse" />
+      </>
+    )}
+    <span className={`material-symbols-outlined text-[26px] transition-all duration-300 ${active ? 'material-symbols-filled scale-110' : 'text-gray-500 dark:text-gray-400'
+      }`}>{icon}</span>
+    <span className={`text-[10px] font-black uppercase tracking-tight transition-all duration-300 ${active ? 'text-primary' : 'text-gray-600 dark:text-gray-300'
+      }`}>{label}</span>
   </button>
 );
 
